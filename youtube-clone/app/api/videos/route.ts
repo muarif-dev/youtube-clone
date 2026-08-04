@@ -67,7 +67,12 @@ export async function POST(request: Request) {
       userId: session.user.id,
     });
 
-    return NextResponse.json(newVideo, { status: 201 });
+    const createdVideo = await Video.findById(newVideo._id).populate(
+      "userId",
+      "name channelName image subscribers"
+    );
+
+    return NextResponse.json(createdVideo, { status: 201 });
   } catch (error: any) {
     console.error("POST Error Details:", error);
     return NextResponse.json(

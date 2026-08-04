@@ -13,6 +13,7 @@ interface IUserProfile {
 
 interface IVideo {
   _id: string;
+  id?: string;
   title: string;
   description: string;
   videoUrl: string;
@@ -21,8 +22,11 @@ interface IVideo {
   likes: number;
   type: "video" | "short";
   category: string;
+  duration?: string;
   createdAt: string;
-  userId: IUserProfile;
+  userId?: IUserProfile;
+  user?: IUserProfile;
+  author?: string;
 }
 
 const categories = ["All", "Web Dev", "Gaming", "Music", "Tech", "Lifestyle"];
@@ -42,9 +46,9 @@ function formatRelativeDate(createdAt: string) {
 }
 
 export default function Home() {
-  const [videos, setVideos] = useState<IVideo[]>([]);
+  const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"all" | "video" | "short">("all");
   const searchParams = useSearchParams();
@@ -65,23 +69,24 @@ export default function Home() {
   useEffect(() => {
     async function fetchVideos() {
       try {
-        const query = new URLSearchParams();
-        if (search.trim()) query.set("query", search.trim());
-        if (view !== "all") query.set("type", view);
-        if (activeCategory !== "All") query.set("category", activeCategory);
-        const res = await fetch(`/api/videos?${query.toString()}`);
+        const res = await fetch(`/api/videos`);
         const data = await res.json();
-        if (Array.isArray(data)) {
-          setVideos(data);
-        }
+        const videoList = Array.isArray(data) ? data : data.videos || [];
+        setVideos(videoList);
       } catch (err) {
         console.error("Error fetching videos:", err);
+        setVideos([]);
       } finally {
         setLoading(false);
       }
     }
     fetchVideos();
-  }, [search, view, activeCategory]);
+  }, []);
+
+  const displayedVideos =
+    selectedCategory === "All"
+      ? videos
+      : videos.filter((video) => video.category === selectedCategory);
 
   return (
     <main className="min-h-screen bg-[#0F0F0F] text-white pb-10 pt-6 sm:px-6 lg:px-8">
@@ -102,9 +107,9 @@ export default function Home() {
               <button
                 key={category}
                 type="button"
-                onClick={() => setActiveCategory(category)}
+                onClick={() => setSelectedCategory(category)}
                 className={`rounded-lg px-3 py-1 text-sm font-medium transition ${
-                  activeCategory === category ? "bg-[#272727] text-white" : "bg-[#1C1C1C] text-slate-300 hover:bg-[#272727]"
+                  selectedCategory === category ? "bg-[#272727] text-white" : "bg-[#1C1C1C] text-slate-300 hover:bg-[#272727]"
                 }`}
               >
                 {category}
@@ -115,7 +120,7 @@ export default function Home() {
 
         {loading ? (
           <div className="p-12 text-center text-slate-400">Loading videos...</div>
-        ) : videos.length === 0 ? (
+        ) : displayedVideos.length === 0 ? (
           <div className="p-12 text-center text-slate-400">
             <p className="text-xl font-semibold text-white">No {view === "short" ? "shorts" : "videos"} yet</p>
             <p className="mt-3 text-slate-500">Try a different search or upload the first {view === "short" ? "short" : "video"} to populate the feed.</p>
@@ -125,7 +130,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {videos.map((video) => {
+            {displayedVideos.map((video) => {
               const channel = video.userId as IUserProfile;
               const displayName = channel?.channelName || channel?.name || "Creator";
               return (
