@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSession, signIn } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import ProfileEditor from "../components/ProfileEditor";
 
 interface IVideo {
   _id: string;
@@ -12,6 +13,15 @@ interface IVideo {
   thumbnailUrl: string;
   views: number;
   createdAt: string;
+}
+
+interface IUserProfile {
+  _id: string;
+  name: string;
+  channelName?: string;
+  image?: string;
+  bio?: string;
+  subscribers?: number;
 }
 
 const tabs = ["Home", "Videos", "Playlists", "About"];
@@ -34,6 +44,7 @@ export default function ChannelPage() {
   const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState("Home");
   const [videos, setVideos] = useState<IVideo[]>([]);
+  const [profile, setProfile] = useState<IUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +75,22 @@ export default function ChannelPage() {
     }
     fetchVideos();
   }, [session, status]);
+
+  useEffect(() => {
+    async function loadProfile() {
+      if (!session?.user?.id) return;
+      try {
+        const res = await fetch("/api/profile");
+        const data = await res.json();
+        if (res.ok) {
+          setProfile(data);
+        }
+      } catch (err) {
+        console.error("Unable to load profile:", err);
+      }
+    }
+    loadProfile();
+  }, [session]);
 
   const handleDelete = async (id: string) => {
     const confirmed = window.confirm("Delete this video? This action cannot be undone.");
@@ -96,23 +123,20 @@ export default function ChannelPage() {
             <div className="flex items-center gap-4">
               <div className="relative h-28 w-28 overflow-hidden rounded-full border-4 border-slate-950 bg-slate-800 shadow-lg shadow-black/40">
                 <img
-                  src="https://api.dicebear.com/6.x/avataaars/svg?seed=channel-clone"
+                  src={profile?.image || "https://api.dicebear.com/6.x/avataaars/svg?seed=channel-clone"}
                   alt="Channel avatar"
                   className="h-full w-full object-cover"
                 />
               </div>
               <div>
                 <p className="text-sm uppercase tracking-[0.35em] text-red-500">Official Channel</p>
-                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">YouTube Clone Studio</h1>
-                <p className="mt-2 text-sm text-slate-400">@ytclone_official</p>
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white">{profile?.channelName || profile?.name || "Your Channel"}</h1>
+                <p className="mt-2 text-sm text-slate-400">{profile?.bio || "Creator on YouTube Clone"}</p>
               </div>
             </div>
             <div className="space-y-3 text-right">
               <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Subscribers</p>
-              <p className="text-2xl font-semibold text-white">1.2M</p>
-              <button className="inline-flex rounded-full bg-red-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-400">
-                Subscribe
-              </button>
+              <p className="text-2xl font-semibold text-white">{(profile?.subscribers || 0).toLocaleString()}</p>
             </div>
           </div>
 
@@ -140,8 +164,9 @@ export default function ChannelPage() {
               <div className="space-y-4">
                 <p className="text-lg font-semibold text-white">Channel Home</p>
                 <p className="text-sm leading-6 text-slate-400">
-                  Welcome to the YouTube Clone channel. Find the latest uploads, featured playlists, and community updates here.
+                  Welcome to your channel. Share new uploads, update your bio, and grow your audience here.
                 </p>
+                <ProfileEditor />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <div className="rounded-3xl bg-slate-950/80 p-5 text-sm text-slate-300">
                     <p className="font-semibold text-white">Featured Playlist</p>
@@ -237,7 +262,7 @@ export default function ChannelPage() {
               <div className="space-y-4">
                 <p className="text-lg font-semibold text-white">About</p>
                 <p className="text-sm leading-7 text-slate-400">
-                  YouTube Clone Studio is a sample channel built to showcase a modern frontend experience with Next.js, Tailwind CSS, and MongoDB. This channel shares tutorials, project demos, and community videos.
+                  {profile?.bio || "This channel is ready to share amazing content with viewers."}
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-3xl border border-slate-800 bg-slate-950/90 p-5">

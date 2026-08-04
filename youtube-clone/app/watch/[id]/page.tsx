@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+
+interface IComment {
+  _id?: string;
+  userId?: string;
+  userName: string;
+  userAvatar?: string;
+  content: string;
+  createdAt: string;
+}
 
 interface IVideo {
   _id: string;
@@ -11,7 +20,19 @@ interface IVideo {
   videoUrl: string;
   thumbnailUrl: string;
   views: number;
+  likes: number;
+  comments: IComment[];
   createdAt: string;
+  userId: IUserProfile;
+}
+
+interface IUserProfile {
+  _id: string;
+  name: string;
+  channelName?: string;
+  image?: string;
+  bio?: string;
+  subscribers?: number;
 }
 
 interface ILibraryVideo {
@@ -40,13 +61,11 @@ export default function WatchPage() {
   const [video, setVideo] = useState<IVideo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [subscribed, setSubscribed] = useState(false);
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [likes, setLikes] = useState(0);
-  const [dislikes, setDislikes] = useState(0);
   const [showComments, setShowComments] = useState(false);
-  const [comments, setComments] = useState<string[]>([]);
+  const [comments, setComments] = useState<IComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [downloaded, setDownloaded] = useState(false);
 
@@ -82,32 +101,33 @@ export default function WatchPage() {
     window.alert("Video saved to your library downloads.");
   };
 
-  const handleLike = () => {
-    if (liked) {
-      setLiked(false);
-      setLikes((current) => Math.max(0, current - 1));
-      return;
-    }
-    setLiked(true);
-    setLikes((current) => current + 1);
-    if (disliked) {
-      setDisliked(false);
-      setDislikes((current) => Math.max(0, current - 1));
+  const handleLike = async () => {
+    if (!video) return;
+    const action = liked ? "unlike" : "like";
+    const res = await fetch(`/api/videos/${video._id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setVideo(data);
+      setLikes(data.likes || 0);
+      setLiked(!liked);
+      if (disliked) setDisliked(false);
+    } else {
+      console.error("Like failed", data);
     }
   };
 
-  const handleDislike = () => {
+  const handleDislike = async () => {
+    if (!video) return;
     if (disliked) {
       setDisliked(false);
-      setDislikes((current) => Math.max(0, current - 1));
       return;
     }
+    if (liked) setLiked(false);
     setDisliked(true);
-    setDislikes((current) => current + 1);
-    if (liked) {
-      setLiked(false);
-      setLikes((current) => Math.max(0, current - 1));
-    }
   };
 
   const handleShare = async () => {
@@ -119,12 +139,28 @@ export default function WatchPage() {
     }
   };
 
-  const handleCommentSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!commentText.trim()) return;
-    setComments((current) => [commentText.trim(), ...current]);
-    setCommentText("");
-    setShowComments(true);
+    if (!commentText.trim() || !video) return;
+
+    try {
+      const res = await fetch(`/api/videos/${video._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "comment", comment: commentText.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setVideo(data);
+        setComments(data.comments || []);
+        setCommentText("");
+        setShowComments(true);
+      } else {
+        console.error("Comment failed", data);
+      }
+    } catch (error) {
+      console.error("Comment submit error", error);
+    }
   };
 
   useEffect(() => {
@@ -136,6 +172,8 @@ export default function WatchPage() {
         const data = await res.json();
         if (res.ok) {
           setVideo(data);
+          setLikes(data.likes || 0);
+          setComments(data.comments || []);
           addVideoToHistory(data);
           const savedDownloads = window.localStorage.getItem("downloadedVideos");
           const downloads: ILibraryVideo[] = savedDownloads ? JSON.parse(savedDownloads) : [];
@@ -198,15 +236,6 @@ export default function WatchPage() {
                       <h2 className="text-2xl font-semibold text-white">{video.title}</h2>
                       <p className="mt-3 text-sm text-slate-400">{video.description}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSubscribed((current) => !current)}
-                      className={`rounded-full px-5 py-3 text-sm font-semibold transition ${
-                        subscribed ? "bg-slate-800 text-slate-100 hover:bg-slate-700" : "bg-red-500 text-white hover:bg-red-400"
-                      }`}
-                    >
-                      {subscribed ? "Subscribed" : "Subscribe"}
-                    </button>
                   </div>
                   <div className="mt-5 flex flex-wrap gap-3">
                     <button
@@ -233,7 +262,7 @@ export default function WatchPage() {
                         <path d="M10 15v4a1 1 0 001 1h5a1 1 0 001-1V7" />
                         <path d="M4 12h6l-1 5 6-6V6H4z" />
                       </svg>
-                      Dislike {dislikes > 0 ? `(${dislikes})` : ""}
+                      Dislike
                     </button>
                     <button
                       type="button"
@@ -292,9 +321,11 @@ export default function WatchPage() {
                       </form>
                       {comments.length > 0 ? (
                         <div className="mt-5 space-y-3">
-                          {comments.map((comment, index) => (
-                            <div key={`${comment}-${index}`} className="rounded-3xl border border-slate-800 bg-slate-900/90 p-4 text-sm text-slate-200">
-                              {comment}
+                          {comments.map((comment) => (
+                            <div key={comment._id ?? comment.createdAt} className="rounded-3xl border border-slate-800 bg-slate-900/90 p-4 text-sm text-slate-200">
+                              <p className="font-semibold text-white">{comment.userName}</p>
+                              <p className="mt-1 text-slate-300">{comment.content}</p>
+                              <p className="mt-2 text-xs text-slate-500">{new Date(comment.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
                             </div>
                           ))}
                         </div>
@@ -305,6 +336,13 @@ export default function WatchPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-3 text-sm text-slate-300">
+                  <div className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2">
+                    <img src={video.userId.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(video.userId.channelName || video.userId.name || "Creator")}&backgroundType=gradientLinear&colors=red,black,slate`} alt={video.userId.name || "Creator"} className="h-9 w-9 rounded-full object-cover" />
+                    <div>
+                      <p className="font-semibold text-white">{video.userId.channelName || video.userId.name || "Creator"}</p>
+                      <p className="text-xs text-slate-400">{(video.userId.subscribers || 0).toLocaleString()} subscribers</p>
+                    </div>
+                  </div>
                   <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2">
                     <svg viewBox="0 0 24 24" className="h-4 w-4 text-red-500" fill="currentColor">
                       <path d="M12 5v14M5 12h14" />

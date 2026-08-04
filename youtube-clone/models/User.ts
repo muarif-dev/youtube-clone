@@ -6,6 +6,9 @@ const UserSchema = new Schema(
     name: { type: String, required: true, trim: true },
     password: { type: String, required: true },
     image: { type: String },
+    channelName: { type: String, trim: true },
+    bio: { type: String, default: "Creator on YouTube Clone" },
+    subscribers: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

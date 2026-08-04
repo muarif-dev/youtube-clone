@@ -4,10 +4,31 @@ import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import Video from "@/models/Video";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get("query")?.trim() || "";
+    const type = searchParams.get("type") || "all";
+    const category = searchParams.get("category") || "All";
+
     await connectToDatabase();
-    const videos = await Video.find({}).sort({ createdAt: -1 });
+    const filter: Record<string, any> = {};
+    if (query) {
+      filter.$or = [
+        { title: { $regex: query, $options: "i" } },
+        { description: { $regex: query, $options: "i" } },
+      ];
+    }
+    if (type !== "all") {
+      filter.type = type;
+    }
+    if (category && category !== "All") {
+      filter.category = category;
+    }
+
+    const videos = await Video.find(filter)
+      .sort({ createdAt: -1 })
+      .populate("userId", "name channelName image subscribers");
     return NextResponse.json(videos, { status: 200 });
   } catch (error: any) {
     console.error("GET Error:", error);
@@ -27,7 +48,7 @@ export async function POST(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
-    const { title, description, videoUrl, thumbnailUrl } = body;
+    const { title, description, videoUrl, thumbnailUrl, category, type } = body;
 
     if (!title || !description || !videoUrl || !thumbnailUrl) {
       return NextResponse.json(
@@ -41,6 +62,8 @@ export async function POST(request: Request) {
       description,
       videoUrl,
       thumbnailUrl,
+      category: category || "General",
+      type: type || "video",
       userId: session.user.id,
     });
 
