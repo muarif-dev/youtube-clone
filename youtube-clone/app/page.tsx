@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -45,7 +45,7 @@ function formatRelativeDate(createdAt: string) {
   return `${Math.floor(diff / day / 365)} years ago`;
 }
 
-export default function Home() {
+function HomeContent() {
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -164,5 +164,13 @@ export default function Home() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0F0F0F] p-12 text-center text-slate-400">Loading...</div>}>
+      <HomeContent />
+    </Suspense>
   );
 }
