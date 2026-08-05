@@ -3,6 +3,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ThumbsUp, ThumbsDown, Share, Download, MessageSquare, ChevronLeft, X, Check } from "lucide-react";
+import { WatchPageSkeleton } from "../../components/Skeletons";
+import { useToast } from "../../components/ToastProvider";
 
 interface IComment {
   _id?: string;
@@ -43,8 +46,14 @@ interface ILibraryVideo {
   watchedAt: string;
 }
 
-function formatViews(views: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", compactDisplay: "short" }).format(views);
+interface ISubscribedChannel {
+  _id: string;
+  name: string;
+  avatar?: string;
+}
+
+function formatCount(count: number) {
+  return new Intl.NumberFormat("en-US", { notation: "compact", compactDisplay: "short" }).format(count);
 }
 
 function formatDate(createdAt: string) {
@@ -58,6 +67,7 @@ function formatDate(createdAt: string) {
 export default function WatchPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
+  const showToast = useToast();
   const [video, setVideo] = useState<IVideo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +78,10 @@ export default function WatchPage() {
   const [comments, setComments] = useState<IComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [downloaded, setDownloaded] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const addVideoToHistory = (currentVideo: IVideo) => {
     if (typeof window === "undefined") return;
@@ -101,6 +115,44 @@ export default function WatchPage() {
     window.alert("Video saved to your library downloads.");
   };
 
+  const toggleVideoLike = (currentVideo: IVideo, nowLiked: boolean) => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("likedVideos");
+    const likedVideos: ILibraryVideo[] = raw ? JSON.parse(raw) : [];
+    if (nowLiked) {
+      const entry: ILibraryVideo = {
+        _id: currentVideo._id,
+        title: currentVideo.title,
+        thumbnailUrl: currentVideo.thumbnailUrl,
+        videoUrl: currentVideo.videoUrl,
+        watchedAt: new Date().toISOString(),
+      };
+      const next = [entry, ...likedVideos.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
+      window.localStorage.setItem("likedVideos", JSON.stringify(next));
+    } else {
+      const next = likedVideos.filter((item) => item._id !== currentVideo._id);
+      window.localStorage.setItem("likedVideos", JSON.stringify(next));
+    }
+  };
+
+  const handleSubscribe = () => {
+    if (!video) return;
+    const next = !subscribed;
+    setSubscribed(next);
+    setSubscriberCount((count) => Math.max(0, count + (next ? 1 : -1)));
+    const raw = window.localStorage.getItem("subscribedChannels");
+    const channels: ISubscribedChannel[] = raw ? JSON.parse(raw) : [];
+    const entry: ISubscribedChannel = {
+      _id: video.userId._id,
+      name: video.userId.channelName || video.userId.name || "Creator",
+      avatar: video.userId.image,
+    };
+    const nextChannels = next
+      ? [entry, ...channels.filter((channel) => channel._id !== entry._id)].slice(0, 50)
+      : channels.filter((channel) => channel._id !== entry._id);
+    window.localStorage.setItem("subscribedChannels", JSON.stringify(nextChannels));
+  };
+
   const handleLike = async () => {
     if (!video) return;
     const action = liked ? "unlike" : "like";
@@ -113,8 +165,10 @@ export default function WatchPage() {
     if (res.ok) {
       setVideo(data);
       setLikes(data.likes || 0);
-      setLiked(!liked);
+      const nowLiked = !liked;
+      setLiked(nowLiked);
       if (disliked) setDisliked(false);
+      toggleVideoLike(video, nowLiked);
     } else {
       console.error("Like failed", data);
     }
@@ -130,12 +184,19 @@ export default function WatchPage() {
     setDisliked(true);
   };
 
-  const handleShare = async () => {
+  const handleShareClick = () => {
+    setCopied(false);
+    setShareOpen(true);
+  };
+
+  const handleCopyLink = async () => {
+    const url = window.location.href;
     try {
-      await navigator.clipboard.writeText(window.location.href);
-      alert("Video link copied to clipboard");
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      showToast("Link copied to clipboard");
     } catch {
-      alert("Could not copy link. Please share manually.");
+      showToast("Could not copy the link.");
     }
   };
 
@@ -174,6 +235,10 @@ export default function WatchPage() {
           setVideo(data);
           setLikes(data.likes || 0);
           setComments(data.comments || []);
+          setSubscriberCount(data.userId?.subscribers ?? 0);
+          const storedChannels = window.localStorage.getItem("subscribedChannels");
+          const channels: ISubscribedChannel[] = storedChannels ? JSON.parse(storedChannels) : [];
+          setSubscribed(channels.some((channel) => channel._id === data.userId?._id));
           addVideoToHistory(data);
           const savedDownloads = window.localStorage.getItem("downloadedVideos");
           const downloads: ILibraryVideo[] = savedDownloads ? JSON.parse(savedDownloads) : [];
@@ -193,174 +258,230 @@ export default function WatchPage() {
   }, [id]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white px-4 pb-10 pt-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.35em] text-red-500">Now watching</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">Video Player</h1>
-          </div>
+    <main className="min-h-screen bg-yt-bg px-4 pt-6 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="flex items-center justify-between gap-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:border-red-500 hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-full border border-yt-border bg-yt-card px-4 py-2 text-sm font-medium text-white transition hover:bg-yt-hover"
           >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
+            <ChevronLeft className="h-4 w-4 text-yt-red" />
             Home
           </Link>
+          <p className="hidden text-sm text-yt-secondary sm:block">
+            {video ? video.title : "Now watching"}
+          </p>
         </div>
 
         {loading ? (
-          <div className="rounded-[2rem] border border-dashed border-slate-700 bg-slate-900/90 p-12 text-center text-slate-400 shadow-inner shadow-slate-950/20">
-            Loading video...
-          </div>
+          <WatchPageSkeleton />
         ) : error ? (
-          <div className="rounded-[2rem] border border-red-500 bg-slate-900/90 p-12 text-center text-red-300 shadow-inner shadow-slate-950/20">
+          <div className="rounded-2xl border border-yt-red bg-yt-card p-12 text-center text-red-300">
             <p className="text-lg font-semibold">{error}</p>
-            <p className="mt-3 text-sm text-slate-400">Return home and choose another upload.</p>
+            <p className="mt-3 text-sm text-yt-secondary">Return home and choose another upload.</p>
           </div>
         ) : video ? (
-          <div className="space-y-6">
-            <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-4 shadow-xl shadow-slate-950/20 sm:p-6">
-              <div className="aspect-video overflow-hidden rounded-[1.5rem] bg-black">
-                <video controls src={video.videoUrl} className="h-full w-full bg-black object-cover" />
-              </div>
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-2xl border border-yt-border bg-black">
+              <video
+                controls
+                poster={video.thumbnailUrl}
+                src={video.videoUrl}
+                className="aspect-video w-full bg-black object-contain"
+              />
             </div>
 
-            <div className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-xl shadow-slate-950/20">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                <div className="max-w-3xl">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h2 className="text-2xl font-semibold text-white">{video.title}</h2>
-                      <p className="mt-3 text-sm text-slate-400">{video.description}</p>
-                    </div>
+            <div className="rounded-2xl bg-yt-card p-5">
+              <h1 className="text-xl font-semibold text-white sm:text-2xl">{video.title}</h1>
+
+              <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <img
+                    src={video.userId.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(video.userId.channelName || video.userId.name || "Creator")}&backgroundType=gradientLinear&colors=red,black,slate`}
+                    alt={video.userId.name || "Creator"}
+                    className="h-10 w-10 shrink-0 rounded-full object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {video.userId.channelName || video.userId.name || "Creator"}
+                    </p>
+                    <p className="text-xs text-yt-secondary">{formatCount(subscriberCount)} subscribers</p>
                   </div>
-                  <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSubscribe}
+                    className={`ml-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      subscribed
+                        ? "bg-yt-hover text-white hover:bg-white/15"
+                        : "bg-yt-red text-white hover:bg-[#CC0000]"
+                    }`}
+                  >
+                    {subscribed ? "Subscribed" : "Subscribe"}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex overflow-hidden rounded-full bg-yt-hover">
                     <button
                       type="button"
                       onClick={handleLike}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm font-semibold transition ${
-                        liked ? "border-red-500 bg-red-500/10 text-red-400" : "border-slate-700 bg-slate-950 text-slate-300 hover:border-red-500 hover:text-white"
+                      className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
+                        liked ? "text-yt-red" : "text-white"
                       }`}
                     >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 9V5a1 1 0 00-1-1H8a1 1 0 00-1 1v12" />
-                        <path d="M20 12h-6l1-5-6 6v5h11z" />
-                      </svg>
-                      Like {likes > 0 ? `(${likes})` : ""}
+                      <ThumbsUp className="h-5 w-5" />
+                      {formatCount(likes)}
                     </button>
+                    <span className="my-2 w-px bg-yt-border" />
                     <button
                       type="button"
                       onClick={handleDislike}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm font-semibold transition ${
-                        disliked ? "border-red-500 bg-red-500/10 text-red-400" : "border-slate-700 bg-slate-950 text-slate-300 hover:border-red-500 hover:text-white"
+                      className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
+                        disliked ? "text-yt-red" : "text-white"
                       }`}
                     >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10 15v4a1 1 0 001 1h5a1 1 0 001-1V7" />
-                        <path d="M4 12h6l-1 5 6-6V6H4z" />
-                      </svg>
-                      Dislike
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleShare}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-red-500 hover:text-white"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7" />
-                        <path d="M16 6l-4-4-4 4" />
-                        <path d="M12 2v13" />
-                      </svg>
-                      Share
-                    </button>
-                    <a
-                      href={video.videoUrl}
-                      download
-                      onClick={() => addVideoToDownloads(video)}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm font-semibold transition ${
-                        downloaded ? "border-green-500 bg-green-500/10 text-green-300 hover:bg-green-500/20" : "border-slate-700 bg-slate-950 text-slate-300 hover:border-red-500 hover:text-white"
-                      }`}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 3v12m0 0l-4-4m4 4l4-4" />
-                        <path d="M4 19h16" />
-                      </svg>
-                      {downloaded ? "Downloaded" : "Download"}
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => setShowComments((current) => !current)}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:border-red-500 hover:text-white"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-                      </svg>
-                      Comment {comments.length > 0 ? `(${comments.length})` : ""}
+                      <ThumbsDown className="h-5 w-5" />
                     </button>
                   </div>
-                  {showComments && (
-                    <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-950/90 p-4">
-                      <form onSubmit={handleCommentSubmit} className="space-y-3">
-                        <label className="block text-sm font-medium text-slate-200">Add a comment</label>
-                        <textarea
-                          value={commentText}
-                          onChange={(event) => setCommentText(event.target.value)}
-                          rows={3}
-                          className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-red-500"
-                          placeholder="Write your comment..."
-                        />
-                        <button
-                          type="submit"
-                          className="rounded-full bg-red-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-400"
-                        >
-                          Post Comment
-                        </button>
-                      </form>
-                      {comments.length > 0 ? (
-                        <div className="mt-5 space-y-3">
-                          {comments.map((comment) => (
-                            <div key={comment._id ?? comment.createdAt} className="rounded-3xl border border-slate-800 bg-slate-900/90 p-4 text-sm text-slate-200">
-                              <p className="font-semibold text-white">{comment.userName}</p>
-                              <p className="mt-1 text-slate-300">{comment.content}</p>
-                              <p className="mt-2 text-xs text-slate-500">{new Date(comment.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })}</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-4 text-sm text-slate-500">No comments yet. Be the first to share your thoughts.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-3 text-sm text-slate-300">
-                  <div className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2">
-                    <img src={video.userId.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(video.userId.channelName || video.userId.name || "Creator")}&backgroundType=gradientLinear&colors=red,black,slate`} alt={video.userId.name || "Creator"} className="h-9 w-9 rounded-full object-cover" />
-                    <div>
-                      <p className="font-semibold text-white">{video.userId.channelName || video.userId.name || "Creator"}</p>
-                      <p className="text-xs text-slate-400">{(video.userId.subscribers || 0).toLocaleString()} subscribers</p>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2">
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-red-500" fill="currentColor">
-                      <path d="M12 5v14M5 12h14" />
-                    </svg>
-                    {formatViews(video.views)}
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2">
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 7V3m8 4V3M5 11h14M4 19h16" />
-                    </svg>
-                    {formatDate(video.createdAt)}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleShareClick}
+                    className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                  >
+                    <Share className="h-5 w-5" />
+                    Share
+                  </button>
+                  <a
+                    href={video.videoUrl}
+                    download
+                    onClick={() => addVideoToDownloads(video)}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      downloaded
+                        ? "bg-[#1A6B3A] text-white hover:bg-[#1E7B44]"
+                        : "bg-yt-hover text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <Download className="h-5 w-5" />
+                    {downloaded ? "Downloaded" : "Download"}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setShowComments((current) => !current)}
+                    className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                  >
+                    <MessageSquare className="h-5 w-5" />
+                    {comments.length > 0 ? formatCount(comments.length) : ""}
+                  </button>
                 </div>
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-3 text-xs text-yt-secondary">
+                <span className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
+                  {formatCount(video.views)} views
+                </span>
+                <span className="inline-flex items-center rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
+                  {formatDate(video.createdAt)}
+                </span>
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-yt-secondary">{video.description}</p>
             </div>
+
+            {showComments && (
+              <div className="rounded-2xl bg-yt-card p-5">
+                <h2 className="text-lg font-semibold text-white">
+                  {comments.length > 0 ? `${formatCount(comments.length)} Comments` : "Comments"}
+                </h2>
+                <form onSubmit={handleCommentSubmit} className="mt-4 space-y-3">
+                  <label className="block text-sm font-medium text-yt-secondary">Add a comment</label>
+                  <textarea
+                    value={commentText}
+                    onChange={(event) => setCommentText(event.target.value)}
+                    rows={3}
+                    className="w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none placeholder:text-yt-secondary focus:border-yt-red"
+                    placeholder="Write your comment..."
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+                  >
+                    Post Comment
+                  </button>
+                </form>
+                {comments.length > 0 ? (
+                  <div className="mt-5 space-y-4">
+                    {comments.map((comment) => (
+                      <div key={comment._id ?? comment.createdAt} className="flex gap-3 text-sm text-yt-secondary">
+                        <img
+                          src={comment.userAvatar || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(comment.userName)}&backgroundType=gradientLinear&colors=red,black,slate`}
+                          alt={comment.userName}
+                          className="h-9 w-9 shrink-0 rounded-full object-cover"
+                        />
+                        <div>
+                          <p className="font-medium text-white">{comment.userName}</p>
+                          <p className="mt-1 text-white">{comment.content}</p>
+                          <p className="mt-1 text-xs text-yt-secondary">
+                            {new Date(comment.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-yt-secondary">No comments yet. Be the first to share your thoughts.</p>
+                )}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
+
+      {shareOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setShareOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-yt-border bg-[#282828] p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white">Share</h2>
+              <button
+                type="button"
+                onClick={() => setShareOpen(false)}
+                className="rounded-full p-2 text-yt-secondary transition hover:bg-yt-hover hover:text-white"
+                aria-label="Close share dialog"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {video ? (
+              <>
+                <p className="mt-4 text-sm text-yt-secondary">{video.title}</p>
+                <div className="mt-4 flex items-center gap-2 rounded-xl border border-yt-border bg-[#121212] p-2">
+                  <input
+                    readOnly
+                    value={window.location.href}
+                    onFocus={(event) => event.target.select()}
+                    className="min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                      copied ? "bg-[#1A6B3A] text-white" : "bg-yt-red text-white hover:bg-[#CC0000]"
+                    }`}
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : null}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

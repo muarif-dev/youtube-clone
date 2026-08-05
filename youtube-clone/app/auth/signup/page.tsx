@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -48,45 +49,45 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-12 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-md rounded-3xl border border-slate-800 bg-slate-900/95 p-8 shadow-xl shadow-slate-950/30">
-        <h1 className="text-3xl font-semibold text-white">Create Account</h1>
-        <p className="mt-3 text-sm text-slate-400">Register to upload videos, manage your channel, and own your content.</p>
+    <div className="min-h-screen bg-yt-bg px-4 py-12 text-white sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-md rounded-2xl border border-yt-border bg-yt-card p-8 shadow-xl">
+        <h1 className="text-2xl font-semibold text-white">Create Account</h1>
+        <p className="mt-3 text-sm text-yt-secondary">Register to upload videos, manage your channel, and own your content.</p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-slate-200">Name</label>
+            <label htmlFor="name" className="block text-sm font-medium text-yt-secondary">Name</label>
             <input
               id="name"
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
-              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-red-500"
+              className="mt-2 w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none focus:border-yt-red"
             />
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-200">Email</label>
+            <label htmlFor="email" className="block text-sm font-medium text-yt-secondary">Email</label>
             <input
               id="email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
-              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-red-500"
+              className="mt-2 w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none focus:border-yt-red"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-200">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium text-yt-secondary">Password</label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
-              className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-red-500"
+              className="mt-2 w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none focus:border-yt-red"
             />
           </div>
 
@@ -95,14 +96,14 @@ export default function SignUpPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-2xl bg-red-500 px-4 py-3 text-sm font-semibold text-white transition disabled:opacity-60"
+            className="w-full rounded-full bg-yt-red px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#CC0000] disabled:opacity-60"
           >
             {submitting ? "Creating account…" : "Sign Up"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-400">
-          Already have an account? <a href="/auth/signin" className="font-semibold text-white hover:text-red-400">Sign in</a>
+        <p className="mt-6 text-center text-sm text-yt-secondary">
+          Already have an account? <Link href="/auth/signin" className="font-semibold text-white hover:text-yt-red">Sign in</Link>
         </p>
       </div>
     </div>

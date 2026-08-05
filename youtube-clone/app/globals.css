@@ -1,19 +1,65 @@
 @import "tailwindcss";
 
-:root {
-  --background: #0F0F0F;
-  --foreground: #ffffff;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  --color-yt-bg: #0f0f0f;
+  --color-yt-card: #212121;
+  --color-yt-hover: #272727;
+  --color-yt-text: #ffffff;
+  --color-yt-secondary: #aaaaaa;
+  --color-yt-red: #ff0000;
+  --color-yt-border: #3f3f3f;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-yt-bg);
+  color: var(--color-yt-text);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-yt-border);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-yt-hover);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes menu-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.18s ease-out both;
+}
+
+.menu-enter {
+  animation: menu-pop-in 0.12s ease-out both;
+  transform-origin: top right;
 }
