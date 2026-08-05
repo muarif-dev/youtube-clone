@@ -49,7 +49,7 @@ export default function ShortsPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-yt-bg px-4 pt-6 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
+    <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <section className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">

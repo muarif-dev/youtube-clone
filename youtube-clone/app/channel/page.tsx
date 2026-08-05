@@ -184,7 +184,7 @@ export default function ChannelPage() {
   );
 
   return (
-    <main className="min-h-screen bg-yt-bg px-4 pt-6 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
+    <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
         {!profile && status === "authenticated" ? (
           <ChannelHeaderSkeleton />

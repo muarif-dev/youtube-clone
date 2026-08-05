@@ -68,7 +68,7 @@ export default function Home() {
       : regularVideos.filter((video) => video.category === selectedCategory);
 
   return (
-    <main className="min-h-screen bg-yt-bg pb-10 pt-6 text-white sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-yt-bg pb-10 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <section className="mb-6 px-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

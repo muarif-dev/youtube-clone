@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
+  ArrowLeft,
   Bell,
   Menu,
   Plus,
@@ -17,7 +18,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSidebar } from "./SidebarProvider";
 
 const sampleNotifications = [
@@ -48,7 +49,25 @@ export default function AppHeader() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(true);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const { toggleCollapsed, toggleMobile } = useSidebar();
+
+  useEffect(() => {
+    if (mobileSearchOpen) {
+      mobileSearchInputRef.current?.focus();
+    }
+  }, [mobileSearchOpen]);
+
+  const submitSearch = (rawQuery: string) => {
+    const nextQuery = rawQuery.trim();
+    router.push(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : "/search");
+  };
+
+  const closeMenus = () => {
+    setNotificationsOpen(false);
+    setMenuOpen(false);
+  };
 
   const displayName = session?.user?.name?.trim() || session?.user?.email?.split("@")[0] || "Profile";
 
@@ -71,13 +90,8 @@ export default function AppHeader() {
     setNotificationsOpen(false);
   };
 
-  const closeMenus = () => {
-    setNotificationsOpen(false);
-    setMenuOpen(false);
-  };
-
   return (
-    <header className="sticky top-0 z-30 h-14 border-b border-yt-border bg-yt-bg/95 backdrop-blur-md">
+    <header className="sticky top-0 z-50 h-14 border-b border-[#272727] bg-[#0F0F0F]">
       <div className="mx-auto flex h-full max-w-full items-center justify-between gap-2 px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-1">
           <button
@@ -102,8 +116,7 @@ export default function AppHeader() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              const nextQuery = query.trim();
-              router.push(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : "/search");
+              submitSearch(query);
             }}
             className="flex w-full max-w-xl items-stretch overflow-hidden rounded-full border border-yt-border bg-[#121212] shadow-inner"
           >
@@ -138,6 +151,14 @@ export default function AppHeader() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileSearchOpen(true)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-white transition hover:bg-yt-hover md:hidden"
+            aria-label="Search"
+          >
+            <Search className="h-6 w-6" />
+          </button>
           <Link
             href="/upload"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-yt-card px-2 text-sm font-medium text-white transition hover:bg-yt-hover sm:px-4"
@@ -278,41 +299,61 @@ export default function AppHeader() {
         </div>
       </div>
 
-      {/* Mobile search bar */}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const nextQuery = query.trim();
-          router.push(nextQuery ? `/search?q=${encodeURIComponent(nextQuery)}` : "/search");
-        }}
-        className="flex items-stretch gap-2 px-3 pb-2 md:hidden"
-      >
-        <div className="relative flex min-w-0 flex-1 items-center">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search"
-            className="min-w-0 w-full rounded-full border border-yt-border bg-[#121212] px-4 py-2 pr-10 text-sm text-white outline-none placeholder:text-yt-secondary"
-          />
-          {query && (
+      {/* Mobile search overlay */}
+      {mobileSearchOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/70 md:hidden"
+          onClick={() => setMobileSearchOpen(false)}
+        >
+          <form
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const nextQuery = query.trim();
+              setMobileSearchOpen(false);
+              submitSearch(nextQuery);
+            }}
+            className="sticky top-0 flex h-14 items-center gap-2 border-b border-[#272727] bg-[#0F0F0F] px-3"
+          >
             <button
               type="button"
-              onClick={() => setQuery("")}
-              className="absolute right-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-yt-secondary transition hover:text-white"
-              aria-label="Clear search"
+              onClick={() => setMobileSearchOpen(false)}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-yt-hover"
+              aria-label="Close search"
             >
-              <X className="h-5 w-5" />
+              <ArrowLeft className="h-6 w-6" />
             </button>
-          )}
+            <label htmlFor="mobile-overlay-search" className="sr-only">
+              Search videos
+            </label>
+            <input
+              id="mobile-overlay-search"
+              ref={mobileSearchInputRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search"
+              className="min-w-0 flex-1 bg-transparent px-1 py-2 text-sm text-white outline-none placeholder:text-yt-secondary"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-yt-secondary transition hover:text-white"
+                aria-label="Clear search"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+            <button
+              type="submit"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yt-hover text-white transition hover:bg-white/20"
+              aria-label="Search"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+          </form>
         </div>
-        <button
-          type="submit"
-          className="inline-flex w-12 items-center justify-center rounded-full bg-yt-card text-yt-secondary transition hover:bg-yt-hover hover:text-white"
-          aria-label="Search"
-        >
-          <Search className="h-5 w-5" />
-        </button>
-      </form>
+      )}
     </header>
   );
 }

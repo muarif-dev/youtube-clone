@@ -15,7 +15,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-yt-border bg-yt-bg md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-[#272727] bg-[#0F0F0F] md:hidden">
       <div className="grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
         {items.map(({ label, href, icon: Icon }) => {
           const active = pathname === href;
