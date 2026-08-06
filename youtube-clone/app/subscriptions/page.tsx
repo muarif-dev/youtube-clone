@@ -9,6 +9,7 @@ import {
   formatRelativeDate,
   channelDisplayName,
   isShortContent,
+  viewCount,
 } from "@/lib/video";
 
 interface IUserProfile {
@@ -339,19 +340,25 @@ export default function SubscriptionsPage() {
                     )}
                   </div>
                   <div className="flex gap-3 p-3">
-                    <img
-                      src={
-                        channel?.image ||
-                        `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(channelDisplayName(channel))}&backgroundType=gradientLinear&colors=red,black,slate`
-                      }
-                      alt={channelDisplayName(channel)}
-                      className="h-9 w-9 shrink-0 rounded-full bg-yt-hover object-cover"
-                    />
+                    <Link href={`/channel/${channel?._id}`} className="shrink-0">
+                      <img
+                        src={
+                          channel?.image ||
+                          `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(channelDisplayName(channel))}&backgroundType=gradientLinear&colors=red,black,slate`
+                        }
+                        alt={channelDisplayName(channel)}
+                        className="h-9 w-9 shrink-0 rounded-full bg-yt-hover object-cover transition hover:opacity-80"
+                      />
+                    </Link>
                     <div className="min-w-0">
                       <h2 className="line-clamp-2 text-sm font-medium text-white">{video.title}</h2>
-                      <p className="mt-1 text-xs text-yt-secondary">{channelDisplayName(channel)}</p>
+                      <Link href={`/channel/${channel?._id}`}>
+                        <p className="mt-1 text-xs text-yt-secondary transition hover:text-white">
+                          {channelDisplayName(channel)}
+                        </p>
+                      </Link>
                       <p className="mt-1 text-xs text-yt-secondary/80">
-                        {formatCount(video.views)} views • {formatRelativeDate(video.createdAt)}
+                        {formatCount(viewCount(video.views))} views • {formatRelativeDate(video.createdAt)}
                       </p>
                     </div>
                   </div>

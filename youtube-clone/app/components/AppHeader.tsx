@@ -6,12 +6,14 @@ import { useSession, signOut } from "next-auth/react";
 import {
   ArrowLeft,
   Bell,
+  Clapperboard,
   Menu,
   Plus,
+  Radio,
   Search,
+  ThumbsUp,
   Upload,
   X,
-  Check,
   ChevronDown,
   UserRound,
   Library,
@@ -20,27 +22,24 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSidebar } from "./SidebarProvider";
+import { formatRelativeDate } from "@/lib/video";
 
-const sampleNotifications = [
-  {
-    id: "n1",
-    title: "New subscriber",
-    body: "A new viewer subscribed to your channel.",
-    time: "2h ago",
-  },
-  {
-    id: "n2",
-    title: "New comment",
-    body: "A viewer commented on your latest video.",
-    time: "5h ago",
-  },
-  {
-    id: "n3",
-    title: "Milestone reached",
-    body: "Your video passed 1,000 views. Nice work!",
-    time: "1d ago",
-  },
-];
+interface INotification {
+  _id: string;
+  type: "like" | "subscription" | "upload";
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: string;
+  sender?: { name?: string; channelName?: string; image?: string } | null;
+  videoId?: { _id: string; title?: string; thumbnailUrl?: string } | string | null;
+}
+
+function NotificationIcon({ type }: { type: INotification["type"] }) {
+  if (type === "like") return <ThumbsUp className="h-4 w-4 text-white" />;
+  if (type === "subscription") return <Radio className="h-4 w-4 text-white" />;
+  return <Clapperboard className="h-4 w-4 text-white" />;
+}
 
 export default function AppHeader() {
   const router = useRouter();
@@ -48,7 +47,9 @@ export default function AppHeader() {
   const [query, setQuery] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [hasUnread, setHasUnread] = useState(true);
+  const [notifications, setNotifications] = useState<INotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const { toggleCollapsed, toggleMobile } = useSidebar();
@@ -58,6 +59,32 @@ export default function AppHeader() {
       mobileSearchInputRef.current?.focus();
     }
   }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    let cancelled = false;
+
+    const loadNotifications = async () => {
+      try {
+        const res = await fetch("/api/notifications", { credentials: "same-origin" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+        setUnreadCount(Number(data.unreadCount) || 0);
+      } catch (err) {
+        console.error("Unable to load notifications:", err);
+      }
+    };
+
+    loadNotifications();
+    const interval = window.setInterval(loadNotifications, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [status]);
 
   const submitSearch = (rawQuery: string) => {
     const nextQuery = rawQuery.trim();
@@ -79,10 +106,28 @@ export default function AppHeader() {
     }
   };
 
-  const handleNotificationsClick = () => {
-    setNotificationsOpen((current) => !current);
+  const handleNotificationsClick = async () => {
+    const nextOpen = !notificationsOpen;
+    setNotificationsOpen(nextOpen);
     setMenuOpen(false);
-    setHasUnread(false);
+
+    if (nextOpen && unreadCount > 0) {
+      setUnreadCount(0);
+      setNotificationsLoading(true);
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+      try {
+        await fetch("/api/notifications", {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+      } catch (err) {
+        console.error("Unable to mark notifications as read:", err);
+      } finally {
+        setNotificationsLoading(false);
+      }
+    }
   };
 
   const handleAvatarClick = () => {
@@ -176,8 +221,10 @@ export default function AppHeader() {
               aria-label="Notifications"
             >
               <Bell className="h-6 w-6" />
-              {hasUnread && !notificationsOpen ? (
-                <span className="absolute right-2.5 top-2.5 h-2.5 w-2.5 rounded-full bg-yt-red ring-2 ring-yt-bg" />
+              {unreadCount > 0 && !notificationsOpen ? (
+                <span className="absolute right-1 top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-yt-red px-1 py-0.5 text-[10px] font-bold text-white ring-2 ring-yt-bg">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
               ) : null}
             </button>
             {notificationsOpen && (
@@ -195,24 +242,59 @@ export default function AppHeader() {
                       <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <ul className="max-h-80 overflow-y-auto">
-                    {sampleNotifications.map((notification) => (
-                      <li
-                        key={notification.id}
-                        className="flex gap-3 border-b border-yt-border/60 px-4 py-3 transition hover:bg-yt-hover"
-                      >
-                        <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yt-hover">
-                          <Check className="h-4 w-4 text-yt-secondary" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-white">{notification.title}</p>
-                          <p className="mt-0.5 line-clamp-2 text-xs text-yt-secondary">{notification.body}</p>
-                          <p className="mt-1 text-[11px] text-yt-secondary">{notification.time}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="px-4 py-3 text-center text-xs text-yt-secondary">No more notifications to show.</p>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notificationsLoading ? (
+                      <div className="px-4 py-6 text-center text-xs text-yt-secondary">Loading notifications...</div>
+                    ) : notifications.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-yt-secondary">
+                        No notifications yet. Likes, subscriptions, and new uploads will show up here.
+                      </div>
+                    ) : (
+                      notifications.map((notification) => {
+                        const videoHref =
+                          notification.videoId && typeof notification.videoId === "object"
+                            ? `/watch/${notification.videoId._id}`
+                            : null;
+                        const inner = (
+                          <>
+                            <span
+                              className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                                notification.read ? "bg-yt-hover" : "bg-yt-red/20"
+                              }`}
+                            >
+                              <NotificationIcon type={notification.type} />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-white">{notification.title}</p>
+                              {notification.body ? (
+                                <p className="mt-0.5 line-clamp-2 text-xs text-yt-secondary">{notification.body}</p>
+                              ) : null}
+                              <p className="mt-1 text-[11px] text-yt-secondary">
+                                {formatRelativeDate(notification.createdAt)}
+                              </p>
+                            </div>
+                          </>
+                        );
+                        const rowClass = `flex gap-3 border-b border-yt-border/60 px-4 py-3 transition hover:bg-yt-hover ${
+                          notification.read ? "opacity-70" : ""
+                        }`;
+                        return videoHref ? (
+                          <Link
+                            key={notification._id}
+                            href={videoHref}
+                            onClick={() => setNotificationsOpen(false)}
+                            className={rowClass}
+                          >
+                            {inner}
+                          </Link>
+                        ) : (
+                          <div key={notification._id} className={rowClass}>
+                            {inner}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -276,7 +358,11 @@ export default function AppHeader() {
                     <div className="border-t border-yt-border py-2">
                       <button
                         type="button"
-                        onClick={() => signOut({ callbackUrl: "/" })}
+                        onClick={() => {
+                          setNotifications([]);
+                          setUnreadCount(0);
+                          signOut({ callbackUrl: "/" });
+                        }}
                         className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-white transition hover:bg-yt-hover"
                       >
                         <LogOut className="h-5 w-5 text-yt-secondary" />

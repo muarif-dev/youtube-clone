@@ -4,6 +4,11 @@ import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import User from "@/models/User";
 
+function toIds(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values.map((x) => String(x));
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -16,11 +21,13 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
-    return NextResponse.json(user, { status: 200 });
-  } catch (error: any) {
+    const subscriberCount = toIds(user.subscribers).length;
+    const obj = user.toObject();
+    return NextResponse.json({ ...obj, subscriberCount }, { status: 200 });
+  } catch (error: unknown) {
     console.error("Profile GET Error:", error);
     return NextResponse.json(
-      { error: error?.message || "Unable to load profile" },
+      { error: error instanceof Error ? error.message : "Unable to load profile" },
       { status: 500 }
     );
   }
@@ -35,13 +42,12 @@ export async function PATCH(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
-    const { channelName, bio, image, subscribers } = body;
+    const { channelName, bio, image } = body;
 
-    const updates: Record<string, any> = {};
+    const updates: Record<string, unknown> = {};
     if (channelName !== undefined) updates.channelName = channelName;
     if (bio !== undefined) updates.bio = bio;
     if (image !== undefined) updates.image = image;
-    if (typeof subscribers === "number") updates.subscribers = subscribers;
 
     const updatedUser = await User.findByIdAndUpdate(
       session.user.id,
@@ -53,11 +59,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    return NextResponse.json(updatedUser, { status: 200 });
-  } catch (error: any) {
+    const subscriberCount = toIds(updatedUser.subscribers).length;
+    const obj = updatedUser.toObject();
+    return NextResponse.json({ ...obj, subscriberCount }, { status: 200 });
+  } catch (error: unknown) {
     console.error("Profile PATCH Error:", error);
     return NextResponse.json(
-      { error: error?.message || "Unable to update profile" },
+      { error: error instanceof Error ? error.message : "Unable to update profile" },
       { status: 500 }
     );
   }

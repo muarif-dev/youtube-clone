@@ -65,3 +65,52 @@ export function ChannelHeaderSkeleton() {
     </div>
   );
 }
+
+export function RelatedVideoSkeleton() {
+  return (
+    <div className="flex gap-2 rounded-xl bg-yt-card p-2">
+      <div className="aspect-video w-40 shrink-0 animate-pulse rounded-lg bg-yt-hover" />
+      <div className="flex-1 space-y-2 py-1">
+        <div className="h-3 w-4/5 animate-pulse rounded bg-yt-hover" />
+        <div className="h-3 w-3/5 animate-pulse rounded bg-yt-hover" />
+        <div className="h-3 w-2/5 animate-pulse rounded bg-yt-hover" />
+      </div>
+    </div>
+  );
+}
+
+export function RelatedVideosSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, index) => (
+        <RelatedVideoSkeleton key={index} />
+      ))}
+    </div>
+  );
+}
+
+export function ShortsFeedSkeleton() {
+  return (
+    <div className="mx-auto flex h-[80vh] w-full max-w-sm items-center justify-center">
+      <div className="relative aspect-[9/16] w-full max-w-sm animate-pulse overflow-hidden rounded-2xl bg-yt-card">
+        <div className="absolute inset-0 flex flex-col gap-4 p-6">
+          <div className="h-6 w-24 rounded bg-yt-hover" />
+          <div className="mt-auto space-y-3">
+            <div className="h-4 w-3/4 rounded bg-yt-hover" />
+            <div className="h-4 w-1/2 rounded bg-yt-hover" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ListSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: count }).map((_, index) => (
+        <div key={index} className="h-16 animate-pulse rounded-xl bg-yt-card" />
+      ))}
+    </div>
+  );
+}

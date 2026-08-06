@@ -22,6 +22,17 @@ import {
 
 export type PlaylistsMap = Record<PlaylistId, PlaylistEntry[]>;
 
+interface ServerPlaylist {
+  _id: string;
+  name: string;
+  userId: string;
+  videos: string[];
+  isPrivate: boolean;
+  containsVideo: boolean;
+  count: number;
+  entries: Array<{ _id: string; title: string; thumbnailUrl: string; videoUrl: string }>;
+}
+
 interface PlaylistContextValue {
   ready: boolean;
   authenticated: boolean;
@@ -32,12 +43,15 @@ interface PlaylistContextValue {
   toggleInPlaylist: (video: PlaylistSource, playlistId: PlaylistId) => Promise<boolean>;
 }
 
+const NAME_TO_KEY: Record<string, PlaylistId> = {
+  "Watch Later": "watchLater",
+  Favorites: "favorites",
+  "Music Mix": "musicMix",
+};
+
 function toEntry(raw: unknown): PlaylistEntry {
   const source = (raw ?? {}) as Partial<PlaylistEntry> & { videoId?: string };
   const videoId = source._id ?? source.videoId ?? "";
-  if (!videoId) {
-    console.warn("Playlist payload missing video id:", raw);
-  }
   return {
     _id: String(videoId),
     title: source.title || "Untitled video",
@@ -47,12 +61,27 @@ function toEntry(raw: unknown): PlaylistEntry {
   };
 }
 
-function normalizeStore(serverData: unknown): PlaylistsMap {
-  const raw = (serverData ?? {}) as Partial<PlaylistsMap>;
+function normalizeStore(serverPlaylists: ServerPlaylist[]): PlaylistsMap {
   const result: PlaylistsMap = { watchLater: [], favorites: [], musicMix: [] };
-  for (const id of Object.keys(result) as PlaylistId[]) {
-    const list = raw[id];
-    result[id] = Array.isArray(list) ? list.map((entry) => toEntry(entry)) : [];
+  if (!Array.isArray(serverPlaylists)) return result;
+  for (const playlist of serverPlaylists) {
+    const key = NAME_TO_KEY[playlist.name];
+    if (!key) continue;
+    result[key] = Array.isArray(playlist.entries) ? playlist.entries.map(toEntry) : [];
+  }
+  return result;
+}
+
+function buildKeyToId(serverPlaylists: ServerPlaylist[]): Record<PlaylistId, string | null> {
+  const result: Record<PlaylistId, string | null> = {
+    watchLater: null,
+    favorites: null,
+    musicMix: null,
+  };
+  if (!Array.isArray(serverPlaylists)) return result;
+  for (const playlist of serverPlaylists) {
+    const key = NAME_TO_KEY[playlist.name];
+    if (key) result[key] = playlist._id;
   }
   return result;
 }
@@ -64,6 +93,11 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
   const authenticated = status === "authenticated";
   const [ready, setReady] = useState(false);
   const [playlists, setPlaylists] = useState<PlaylistsMap>(() => getPlaylists());
+  const [keyToId, setKeyToId] = useState<Record<PlaylistId, string | null>>({
+    watchLater: null,
+    favorites: null,
+    musicMix: null,
+  });
 
   useEffect(() => {
     if (!ready) return;
@@ -81,9 +115,10 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
             throw new Error(`GET /api/playlists failed with status ${res.status}`);
           }
           const data = (await res.json()) as { playlists?: unknown };
-          if (!cancelled && data.playlists) {
-            setPlaylists((current) => mergeStores(current, normalizeStore(data.playlists)));
-            console.log("PlaylistProvider: merged playlists from server");
+          const serverPlaylists = Array.isArray(data.playlists) ? (data.playlists as ServerPlaylist[]) : [];
+          if (!cancelled) {
+            setKeyToId(buildKeyToId(serverPlaylists));
+            setPlaylists((current) => mergeStores(current, normalizeStore(serverPlaylists)));
           }
         } catch (err) {
           console.error("PlaylistProvider: failed to load server playlists, keeping local cache:", err);
@@ -107,6 +142,17 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
     [playlists]
   );
 
+  const syncPlaylist = useCallback((data: { playlist?: ServerPlaylist }) => {
+    const playlist = data.playlist;
+    if (!playlist) return;
+    const key = NAME_TO_KEY[playlist.name];
+    if (!key) return;
+    setPlaylists((current) => ({
+      ...current,
+      [key]: Array.isArray(playlist.entries) ? playlist.entries.map(toEntry) : [],
+    }));
+  }, []);
+
   const saveToPlaylist = useCallback(
     async (video: PlaylistSource, playlistId: PlaylistId): Promise<boolean> => {
       const entry = toEntry(video);
@@ -117,26 +163,24 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
+      const playlistDocId = keyToId[playlistId];
+      if (!playlistDocId) {
+        console.error("PlaylistProvider: no server playlist id for", playlistId);
+        return false;
+      }
+
       try {
-        const res = await fetch("/api/playlists", {
-          method: "POST",
+        const res = await fetch(`/api/playlists/${playlistDocId}`, {
+          method: "PATCH",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            playlist: playlistId,
-            videoId: entry._id,
-            title: entry.title,
-            thumbnailUrl: entry.thumbnailUrl,
-            videoUrl: entry.videoUrl,
-          }),
+          body: JSON.stringify({ videoId: entry._id, checked: true }),
         });
-        const data = (await res.json()) as { playlists?: unknown; error?: string };
+        const data = (await res.json()) as { playlist?: ServerPlaylist; error?: string };
         if (!res.ok) {
-          throw new Error(data.error || `POST /api/playlists failed with status ${res.status}`);
+          throw new Error(data.error || `PATCH /api/playlists failed with status ${res.status}`);
         }
-        if (data.playlists) {
-          setPlaylists((current) => mergeStores(current, normalizeStore(data.playlists)));
-        }
+        syncPlaylist(data);
         console.log(`PlaylistProvider: synced "${entry.title}" to ${playlistId} on server`);
         return true;
       } catch (err) {
@@ -144,7 +188,7 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [authenticated]
+    [authenticated, keyToId, syncPlaylist]
   );
 
   const removeFromPlaylist = useCallback(
@@ -156,20 +200,24 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
+      const playlistDocId = keyToId[playlistId];
+      if (!playlistDocId) {
+        console.error("PlaylistProvider: no server playlist id for", playlistId);
+        return false;
+      }
+
       try {
-        const res = await fetch("/api/playlists", {
-          method: "DELETE",
+        const res = await fetch(`/api/playlists/${playlistDocId}`, {
+          method: "PATCH",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playlist: playlistId, videoId }),
+          body: JSON.stringify({ videoId, checked: false }),
         });
-        const data = (await res.json()) as { playlists?: unknown; error?: string };
+        const data = (await res.json()) as { playlist?: ServerPlaylist; error?: string };
         if (!res.ok) {
-          throw new Error(data.error || `DELETE /api/playlists failed with status ${res.status}`);
+          throw new Error(data.error || `PATCH /api/playlists failed with status ${res.status}`);
         }
-        if (data.playlists) {
-          setPlaylists((current) => mergeStores(current, normalizeStore(data.playlists)));
-        }
+        syncPlaylist(data);
         console.log(`PlaylistProvider: removed ${videoId} from ${playlistId} on server`);
         return true;
       } catch (err) {
@@ -177,7 +225,7 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
         return false;
       }
     },
-    [authenticated]
+    [authenticated, keyToId, syncPlaylist]
   );
 
   const toggleInPlaylist = useCallback(

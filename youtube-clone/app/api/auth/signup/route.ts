@@ -28,10 +28,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ message: "Account created", userId: user._id }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Signup Error:", error);
     return NextResponse.json(
-      { error: error?.message || "Unable to create account" },
+      { error: error instanceof Error ? error.message : "Unable to create account" },
       { status: 500 }
     );
   }

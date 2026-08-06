@@ -1,4 +1,4 @@
-import mongoose, { Schema, model, models } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const PlaylistItemSchema = new Schema(
   {
@@ -20,6 +20,16 @@ const PlaylistsSchema = new Schema(
   { _id: false }
 );
 
+const CustomPlaylistSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    title: { type: String, required: true },
+    privacy: { type: String, enum: ["Public", "Unlisted", "Private"], default: "Public" },
+    videos: { type: [PlaylistItemSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const UserSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -28,15 +38,19 @@ const UserSchema = new Schema(
     image: { type: String },
     channelName: { type: String, trim: true },
     bio: { type: String, default: "Creator on YouTube Clone" },
-    subscribers: { type: Number, default: 0 },
+    subscribers: { type: [String], default: [] },
+    subscribedTo: { type: [String], default: [] },
     playlists: {
       type: PlaylistsSchema,
       default: () => ({ watchLater: [], favorites: [], musicMix: [] }),
     },
+    customPlaylists: { type: [CustomPlaylistSchema], default: [] },
   },
   { timestamps: true }
 );
 
-const User = models.User || model("User", UserSchema);
+delete mongoose.models.User;
+
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
 
 export default User;

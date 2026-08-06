@@ -1,4 +1,4 @@
-import mongoose, { Schema, model, models } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const VideoSchema = new Schema(
   {
@@ -7,7 +7,9 @@ const VideoSchema = new Schema(
     videoUrl: { type: String, required: true },
     thumbnailUrl: { type: String, required: true },
     views: { type: Number, default: 0 },
-    likes: { type: Number, default: 0 },
+    viewedBy: { type: [{ type: Schema.Types.ObjectId, ref: "User" }], default: [] },
+    likedBy: { type: [String], default: [] },
+    dislikedBy: { type: [String], default: [] },
     comments: {
       type: [
         {
@@ -27,6 +29,8 @@ const VideoSchema = new Schema(
   { timestamps: true }
 );
 
-const Video = models.Video || model("Video", VideoSchema);
+delete mongoose.models.Video;
+
+const Video = mongoose.models.Video || mongoose.model("Video", VideoSchema);
 
 export default Video;

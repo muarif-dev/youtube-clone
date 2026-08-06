@@ -2,40 +2,86 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
-import User from "@/models/User";
+import Playlist from "@/models/Playlist";
+import Video from "@/models/Video";
 
-const PLAYLIST_KEYS = ["watchLater", "favorites", "musicMix"] as const;
-type PlaylistKey = (typeof PLAYLIST_KEYS)[number];
-type PlaylistItem = { videoId: string; title: string; thumbnailUrl: string; videoUrl: string; addedAt: Date };
-type PlaylistsStore = Record<PlaylistKey, PlaylistItem[]>;
+const SYSTEM_PLAYLISTS = [
+  { key: "watchLater", name: "Watch Later" },
+  { key: "favorites", name: "Favorites" },
+  { key: "musicMix", name: "Music Mix" },
+] as const;
 
-interface PlaylistRequest {
-  playlist?: string;
-  videoId?: string;
-  title?: string;
-  thumbnailUrl?: string;
-  videoUrl?: string;
+interface PlaylistView {
+  _id: string;
+  name: string;
+  userId: string;
+  videos: string[];
+  isPrivate: boolean;
+  containsVideo: boolean;
+  count: number;
+  entries: Array<{ _id: string; title: string; thumbnailUrl: string; videoUrl: string }>;
 }
 
-function normalizeStore(raw: unknown): PlaylistsStore {
-  const source = (raw ?? {}) as Partial<PlaylistsStore>;
-  return {
-    watchLater: Array.isArray(source.watchLater) ? source.watchLater : [],
-    favorites: Array.isArray(source.favorites) ? source.favorites : [],
-    musicMix: Array.isArray(source.musicMix) ? source.musicMix : [],
-  };
+function toVideoIds(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values.map((x) => String(x));
 }
 
-function readStore(user: unknown): PlaylistsStore {
-  const playlists = (user as { playlists?: unknown }).playlists;
-  return normalizeStore(playlists);
+async function ensureSystemPlaylists(userId: string) {
+  for (const { name } of SYSTEM_PLAYLISTS) {
+    const exists = await Playlist.exists({ userId, name });
+    if (!exists) {
+      await Playlist.create({ userId, name, videos: [], isPrivate: name !== "Watch Later" });
+    }
+  }
 }
 
-function isPlaylistKey(value: string): value is PlaylistKey {
-  return (PLAYLIST_KEYS as readonly string[]).includes(value);
+async function buildViews(
+  docs: Array<{ _id: unknown; name: string; userId: string; videos: string[]; isPrivate: boolean }>,
+  videoId?: string | null
+): Promise<PlaylistView[]> {
+  const allIds = docs.flatMap((doc) => toVideoIds(doc.videos));
+  const uniqueIds = Array.from(new Set(allIds));
+  const videoDocs = uniqueIds.length
+    ? await Video.find({ _id: { $in: uniqueIds } }).select("title thumbnailUrl videoUrl")
+    : [];
+  const videoMap = new Map<string, { title: string; thumbnailUrl: string; videoUrl: string }>();
+  for (const v of videoDocs) {
+    videoMap.set(String(v._id), {
+      title: v.title,
+      thumbnailUrl: v.thumbnailUrl,
+      videoUrl: v.videoUrl,
+    });
+  }
+  return docs.map((doc) => {
+    const videos = toVideoIds(doc.videos);
+    const entries = videos
+      .map((id) => {
+        const meta = videoMap.get(id);
+        return meta
+          ? { _id: id, title: meta.title, thumbnailUrl: meta.thumbnailUrl, videoUrl: meta.videoUrl }
+          : null;
+      })
+      .filter((entry): entry is { _id: string; title: string; thumbnailUrl: string; videoUrl: string } => Boolean(entry));
+    return {
+      _id: String(doc._id),
+      name: doc.name,
+      userId: doc.userId,
+      videos,
+      isPrivate: Boolean(doc.isPrivate),
+      containsVideo: videoId ? videos.includes(videoId) : false,
+      count: videos.length,
+      entries,
+    };
+  });
 }
 
-export async function GET() {
+async function loadUserPlaylists(userId: string, videoId?: string | null) {
+  const docs = await Playlist.find({ userId }).sort({ createdAt: 1 });
+  return buildViews(docs, videoId);
+}
+
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,14 +89,14 @@ export async function GET() {
 
   try {
     await connectToDatabase();
-    const user = await User.findById(session.user.id);
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-    const store = readStore(user);
-    console.log("Playlists GET: loaded playlists for", session.user.id);
-    return NextResponse.json({ playlists: store }, { status: 200 });
-  } catch (error) {
+    const userId = String(session.user.id);
+    const videoId = new URL(request.url).searchParams.get("videoId");
+
+    await ensureSystemPlaylists(userId);
+    const playlists = await loadUserPlaylists(userId, videoId);
+
+    return NextResponse.json({ playlists }, { status: 200 });
+  } catch (error: unknown) {
     console.error("Playlists GET Error:", error);
     return NextResponse.json({ error: "Unable to load playlists" }, { status: 500 });
   }
@@ -64,89 +110,31 @@ export async function POST(request: Request) {
 
   try {
     await connectToDatabase();
-    const body = (await request.json()) as PlaylistRequest;
-    const { playlist, videoId, title, thumbnailUrl, videoUrl } = body;
-
-    if (!playlist || !isPlaylistKey(playlist)) {
-      return NextResponse.json({ error: "Invalid playlist" }, { status: 400 });
-    }
-    if (!videoId) {
-      return NextResponse.json({ error: "videoId is required" }, { status: 400 });
-    }
-
-    const user = await User.findById(session.user.id);
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    const store = readStore(user);
-    const normalizedVideoId = String(videoId);
-    const alreadySaved = store[playlist].some((item) => String(item.videoId) === normalizedVideoId);
-    if (alreadySaved) {
-      return NextResponse.json({ playlists: store }, { status: 200 });
-    }
-
-    const entry: PlaylistItem = {
-      videoId: normalizedVideoId,
-      title: String(title ?? ""),
-      thumbnailUrl: String(thumbnailUrl ?? ""),
-      videoUrl: String(videoUrl ?? ""),
-      addedAt: new Date(),
+    const userId = String(session.user.id);
+    const body = (await request.json()) as {
+      name?: string;
+      videoId?: string;
+      isPrivate?: boolean;
+      create?: boolean;
+      title?: string;
+      playlist?: string;
     };
 
-    const nextStore: PlaylistsStore = {
-      ...store,
-      [playlist]: [entry, ...store[playlist]].slice(0, 50),
-    };
+    const name = body.name?.trim() || body.title?.trim() || "";
+    if (!name) {
+      return NextResponse.json({ error: "Playlist name is required" }, { status: 400 });
+    }
 
-    (user as { playlists?: PlaylistsStore }).playlists = nextStore;
-    await user.save();
-
-    console.log(`Playlists POST: saved video ${normalizedVideoId} to ${playlist}`);
-    return NextResponse.json({ playlists: nextStore }, { status: 200 });
-  } catch (error) {
+    const doc = await Playlist.create({
+      userId,
+      name,
+      videos: body.videoId ? [String(body.videoId)] : [],
+      isPrivate: Boolean(body.isPrivate),
+    });
+    const playlists = await loadUserPlaylists(userId, body.videoId ? String(body.videoId) : null);
+    return NextResponse.json({ playlists, playlist: playlists.find((p) => p._id === String(doc._id)) }, { status: 201 });
+  } catch (error: unknown) {
     console.error("Playlists POST Error:", error);
-    return NextResponse.json({ error: "Failed to save video" }, { status: 500 });
-  }
-}
-
-export async function DELETE(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  try {
-    await connectToDatabase();
-    const body = (await request.json()) as PlaylistRequest;
-    const { playlist, videoId } = body;
-
-    if (!playlist || !isPlaylistKey(playlist)) {
-      return NextResponse.json({ error: "Invalid playlist" }, { status: 400 });
-    }
-    if (!videoId) {
-      return NextResponse.json({ error: "videoId is required" }, { status: 400 });
-    }
-
-    const user = await User.findById(session.user.id);
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    const store = readStore(user);
-    const normalizedVideoId = String(videoId);
-    const nextStore: PlaylistsStore = {
-      ...store,
-      [playlist]: store[playlist].filter((item) => String(item.videoId) !== normalizedVideoId),
-    };
-
-    (user as { playlists?: PlaylistsStore }).playlists = nextStore;
-    await user.save();
-
-    console.log(`Playlists DELETE: removed video ${normalizedVideoId} from ${playlist}`);
-    return NextResponse.json({ playlists: nextStore }, { status: 200 });
-  } catch (error) {
-    console.error("Playlists DELETE Error:", error);
-    return NextResponse.json({ error: "Failed to remove video" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create playlist" }, { status: 500 });
   }
 }

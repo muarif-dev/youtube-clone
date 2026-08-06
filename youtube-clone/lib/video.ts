@@ -34,8 +34,14 @@ export function formatCount(count: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", compactDisplay: "short" }).format(count);
 }
 
-export function formatViews(views: number) {
-  return `${formatCount(views)} views`;
+export function viewCount(views: unknown): number {
+  if (Array.isArray(views)) return views.length;
+  const numeric = Number(views);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+export function formatViews(views: number | unknown[]) {
+  return `${formatCount(viewCount(views))} views`;
 }
 
 export function formatRelativeDate(createdAt: string) {

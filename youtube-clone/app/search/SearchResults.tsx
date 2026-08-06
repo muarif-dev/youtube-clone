@@ -127,17 +127,21 @@ export default function SearchResults() {
                           )}
                         </div>
                         <div className="flex gap-3 p-3">
-                          <img
-                            src={
-                              channel?.image ||
-                              `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundType=gradientLinear&colors=red,black,slate`
-                            }
-                            alt={displayName}
-                            className="h-9 w-9 shrink-0 rounded-full bg-yt-hover object-cover"
-                          />
+                          <Link href={`/channel/${channel?._id}`} className="shrink-0">
+                            <img
+                              src={
+                                channel?.image ||
+                                `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundType=gradientLinear&colors=red,black,slate`
+                              }
+                              alt={displayName}
+                              className="h-9 w-9 shrink-0 rounded-full bg-yt-hover object-cover transition hover:opacity-80"
+                            />
+                          </Link>
                           <div className="min-w-0">
                             <h3 className="line-clamp-2 text-sm font-medium text-white">{video.title}</h3>
-                            <p className="mt-1 text-xs text-yt-secondary">{displayName}</p>
+                            <Link href={`/channel/${channel?._id}`}>
+                              <p className="mt-1 text-xs text-yt-secondary transition hover:text-white">{displayName}</p>
+                            </Link>
                             <p className="mt-1 text-xs text-yt-secondary/80">
                               {formatViews(video.views)} • {formatRelativeDate(video.createdAt)}
                             </p>

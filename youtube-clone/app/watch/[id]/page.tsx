@@ -1,11 +1,24 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ThumbsUp, ThumbsDown, Share, Download, MessageSquare, ChevronLeft, X, Check } from "lucide-react";
-import { WatchPageSkeleton } from "../../components/Skeletons";
+import { useSession } from "next-auth/react";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  Share,
+  Download,
+  MessageSquare,
+  ChevronLeft,
+  ListPlus,
+  X,
+  Check,
+} from "lucide-react";
+import { WatchPageSkeleton, RelatedVideosSkeleton } from "../../components/Skeletons";
 import { useToast } from "../../components/ToastProvider";
+import SavePlaylistModal from "../../components/SavePlaylistModal";
+import { formatCount, formatDuration, formatViews, formatRelativeDate, channelDisplayName } from "@/lib/video";
 
 interface IComment {
   _id?: string;
@@ -16,6 +29,14 @@ interface IComment {
   createdAt: string;
 }
 
+interface IUserProfile {
+  _id: string;
+  name: string;
+  channelName?: string;
+  image?: string;
+  bio?: string;
+}
+
 interface IVideo {
   _id: string;
   title: string;
@@ -24,18 +45,32 @@ interface IVideo {
   thumbnailUrl: string;
   views: number;
   likes: number;
+  dislikes?: number;
+  likesCount?: number;
+  dislikesCount?: number;
+  isLiked?: boolean;
+  isDisliked?: boolean;
   comments: IComment[];
   createdAt: string;
+  duration?: number | string;
+  liked: boolean;
+  disliked: boolean;
+  subscribed: boolean;
+  subscriberCount: number;
   userId: IUserProfile;
 }
 
-interface IUserProfile {
+interface IRelatedVideo {
   _id: string;
-  name: string;
-  channelName?: string;
-  image?: string;
-  bio?: string;
-  subscribers?: number;
+  title: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  views: number | unknown[];
+  likes: number;
+  createdAt: string;
+  duration?: number | string;
+  type?: string;
+  userId?: IUserProfile;
 }
 
 interface ILibraryVideo {
@@ -44,16 +79,6 @@ interface ILibraryVideo {
   thumbnailUrl: string;
   videoUrl: string;
   watchedAt: string;
-}
-
-interface ISubscribedChannel {
-  _id: string;
-  name: string;
-  avatar?: string;
-}
-
-function formatCount(count: number) {
-  return new Intl.NumberFormat("en-US", { notation: "compact", compactDisplay: "short" }).format(count);
 }
 
 function formatDate(createdAt: string) {
@@ -67,23 +92,30 @@ function formatDate(createdAt: string) {
 export default function WatchPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
+  const { data: session } = useSession();
   const showToast = useToast();
+
   const [video, setVideo] = useState<IVideo | null>(null);
+  const [related, setRelated] = useState<IRelatedVideo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [relatedLoading, setRelatedLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
   const [likes, setLikes] = useState(0);
+  const [dislikes, setDislikes] = useState(0);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subscriberCount, setSubscriberCount] = useState(0);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<IComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [downloaded, setDownloaded] = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
-  const [subscriberCount, setSubscriberCount] = useState(0);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [interactionBusy, setInteractionBusy] = useState(false);
 
-  const addVideoToHistory = (currentVideo: IVideo) => {
+  const addVideoToHistory = useCallback((currentVideo: IVideo) => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem("watchHistory");
     const history: ILibraryVideo[] = raw ? JSON.parse(raw) : [];
@@ -96,9 +128,9 @@ export default function WatchPage() {
     };
     const nextHistory = [nextEntry, ...history.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
     window.localStorage.setItem("watchHistory", JSON.stringify(nextHistory));
-  };
+  }, []);
 
-  const addVideoToDownloads = (currentVideo: IVideo) => {
+  const addVideoToDownloads = useCallback((currentVideo: IVideo) => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem("downloadedVideos");
     const downloads: ILibraryVideo[] = raw ? JSON.parse(raw) : [];
@@ -111,11 +143,9 @@ export default function WatchPage() {
     };
     const nextDownloads = [nextDownload, ...downloads.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
     window.localStorage.setItem("downloadedVideos", JSON.stringify(nextDownloads));
-    setDownloaded(true);
-    window.alert("Video saved to your library downloads.");
-  };
+  }, []);
 
-  const toggleVideoLike = (currentVideo: IVideo, nowLiked: boolean) => {
+  const toggleVideoInLikedStorage = useCallback((currentVideo: IVideo, nowLiked: boolean) => {
     if (typeof window === "undefined") return;
     const raw = window.localStorage.getItem("likedVideos");
     const likedVideos: ILibraryVideo[] = raw ? JSON.parse(raw) : [];
@@ -127,61 +157,165 @@ export default function WatchPage() {
         videoUrl: currentVideo.videoUrl,
         watchedAt: new Date().toISOString(),
       };
-      const next = [entry, ...likedVideos.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
-      window.localStorage.setItem("likedVideos", JSON.stringify(next));
+      window.localStorage.setItem(
+        "likedVideos",
+        JSON.stringify([entry, ...likedVideos.filter((item) => item._id !== currentVideo._id)].slice(0, 20))
+      );
     } else {
-      const next = likedVideos.filter((item) => item._id !== currentVideo._id);
-      window.localStorage.setItem("likedVideos", JSON.stringify(next));
+      window.localStorage.setItem(
+        "likedVideos",
+        JSON.stringify(likedVideos.filter((item) => item._id !== currentVideo._id))
+      );
     }
-  };
+  }, []);
 
-  const handleSubscribe = () => {
-    if (!video) return;
-    const next = !subscribed;
-    setSubscribed(next);
-    setSubscriberCount((count) => Math.max(0, count + (next ? 1 : -1)));
-    const raw = window.localStorage.getItem("subscribedChannels");
-    const channels: ISubscribedChannel[] = raw ? JSON.parse(raw) : [];
-    const entry: ISubscribedChannel = {
-      _id: video.userId._id,
-      name: video.userId.channelName || video.userId.name || "Creator",
-      avatar: video.userId.image,
+  useEffect(() => {
+    if (!id) return;
+
+    let cancelled = false;
+
+    async function fetchVideo() {
+      try {
+        const [videoRes, relatedRes] = await Promise.all([
+          fetch(`/api/videos/${id}`),
+          fetch(`/api/videos/related/${id}`),
+        ]);
+        const videoData = await videoRes.json();
+        if (videoRes.ok) {
+          if (cancelled) return;
+          setVideo(videoData);
+          setLikes(videoData.likesCount ?? videoData.likes ?? 0);
+          setDislikes(videoData.dislikesCount ?? videoData.dislikes ?? 0);
+          setComments(videoData.comments || []);
+          setLiked(Boolean(videoData.isLiked ?? videoData.liked));
+          setDisliked(Boolean(videoData.isDisliked ?? videoData.disliked));
+          setSubscribed(Boolean(videoData.subscribed));
+          setSubscriberCount(videoData.subscriberCount || 0);
+          addVideoToHistory(videoData);
+          const savedDownloads = window.localStorage.getItem("downloadedVideos");
+          const downloads: ILibraryVideo[] = savedDownloads ? JSON.parse(savedDownloads) : [];
+          setDownloaded(downloads.some((item) => item._id === videoData._id));
+        } else {
+          if (!cancelled) setError(videoData.error || "Unable to load the video.");
+        }
+
+        const relatedData = await relatedRes.json();
+        if (relatedRes.ok && Array.isArray(relatedData) && !cancelled) {
+          setRelated(relatedData);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setError("Unable to load the video.");
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRelatedLoading(false);
+        }
+      }
+    }
+
+    fetchVideo();
+    return () => {
+      cancelled = true;
     };
-    const nextChannels = next
-      ? [entry, ...channels.filter((channel) => channel._id !== entry._id)].slice(0, 50)
-      : channels.filter((channel) => channel._id !== entry._id);
-    window.localStorage.setItem("subscribedChannels", JSON.stringify(nextChannels));
-  };
+  }, [id, addVideoToHistory]);
 
   const handleLike = async () => {
     if (!video) return;
-    const action = liked ? "unlike" : "like";
-    const res = await fetch(`/api/videos/${video._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setVideo(data);
-      setLikes(data.likes || 0);
-      const nowLiked = !liked;
-      setLiked(nowLiked);
-      if (disliked) setDisliked(false);
-      toggleVideoLike(video, nowLiked);
-    } else {
-      console.error("Like failed", data);
+    if (!session?.user?.id) {
+      showToast("Sign in to like videos");
+      return;
+    }
+    if (interactionBusy) return;
+    setInteractionBusy(true);
+    try {
+      const res = await fetch(`/api/videos/${video._id}/like`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "like" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const nowLiked = Boolean(data?.isLiked ?? data?.liked);
+        const nowDisliked = Boolean(data?.isDisliked ?? data?.disliked);
+        setVideo(data);
+        setLikes(data?.likesCount ?? data?.likes ?? 0);
+        setDislikes(data?.dislikesCount ?? data?.dislikes ?? 0);
+        setLiked(nowLiked);
+        setDisliked(nowDisliked);
+        toggleVideoInLikedStorage(data, nowLiked);
+      } else {
+        showToast(data?.error || "Unable to update like");
+      }
+    } catch {
+      showToast("Unable to update like");
+    } finally {
+      setInteractionBusy(false);
     }
   };
 
   const handleDislike = async () => {
     if (!video) return;
-    if (disliked) {
-      setDisliked(false);
+    if (!session?.user?.id) {
+      showToast("Sign in to dislike videos");
       return;
     }
-    if (liked) setLiked(false);
-    setDisliked(true);
+    if (interactionBusy) return;
+    setInteractionBusy(true);
+    try {
+      const res = await fetch(`/api/videos/${video._id}/dislike`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dislike" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const nowLiked = Boolean(data?.isLiked ?? data?.liked);
+        const nowDisliked = Boolean(data?.isDisliked ?? data?.disliked);
+        setVideo(data);
+        setLikes(data?.likesCount ?? data?.likes ?? 0);
+        setDislikes(data?.dislikesCount ?? data?.dislikes ?? 0);
+        setLiked(nowLiked);
+        setDisliked(nowDisliked);
+        toggleVideoInLikedStorage(data, nowLiked);
+      } else {
+        showToast(data?.error || "Unable to update dislike");
+      }
+    } catch {
+      showToast("Unable to update dislike");
+    } finally {
+      setInteractionBusy(false);
+    }
+  };
+
+  const handleSubscribe = async () => {
+    if (!video) return;
+    if (!session?.user?.id) {
+      showToast("Sign in to subscribe");
+      return;
+    }
+    const channelId = video.userId?._id;
+    if (!channelId) return;
+    if (interactionBusy) return;
+    setInteractionBusy(true);
+    try {
+      const res = await fetch(`/api/channels/${channelId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: subscribed ? "unsubscribe" : "subscribe" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSubscribed(Boolean(data.subscribed));
+        setSubscriberCount(data.subscriberCount || 0);
+      } else {
+        showToast(data.error || "Unable to update subscription");
+      }
+    } catch {
+      showToast("Unable to update subscription");
+    } finally {
+      setInteractionBusy(false);
+    }
   };
 
   const handleShareClick = () => {
@@ -200,9 +334,36 @@ export default function WatchPage() {
     }
   };
 
+  const handleDownload = async () => {
+    if (!video || downloaded) return;
+    const fileName = `${(video.title || "video").replace(/[^a-zA-Z0-9]/g, "_")}.mp4`;
+    try {
+      const response = await fetch(video.videoUrl);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      addVideoToDownloads(video);
+      setDownloaded(true);
+      showToast("Download started");
+    } catch (err) {
+      console.error("Download failed:", err);
+      showToast("Could not start download. The video may not be available offline.");
+    }
+  };
+
   const handleCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!commentText.trim() || !video) return;
+    if (!session?.user?.id) {
+      showToast("Sign in to comment");
+      return;
+    }
 
     try {
       const res = await fetch(`/api/videos/${video._id}`, {
@@ -217,49 +378,20 @@ export default function WatchPage() {
         setCommentText("");
         setShowComments(true);
       } else {
-        console.error("Comment failed", data);
+        showToast(data.error || "Unable to post comment");
       }
     } catch (error) {
       console.error("Comment submit error", error);
+      showToast("Unable to post comment");
     }
   };
 
-  useEffect(() => {
-    if (!id) return;
-
-    async function fetchVideo() {
-      try {
-        const res = await fetch(`/api/videos/${id}`);
-        const data = await res.json();
-        if (res.ok) {
-          setVideo(data);
-          setLikes(data.likes || 0);
-          setComments(data.comments || []);
-          setSubscriberCount(data.userId?.subscribers ?? 0);
-          const storedChannels = window.localStorage.getItem("subscribedChannels");
-          const channels: ISubscribedChannel[] = storedChannels ? JSON.parse(storedChannels) : [];
-          setSubscribed(channels.some((channel) => channel._id === data.userId?._id));
-          addVideoToHistory(data);
-          const savedDownloads = window.localStorage.getItem("downloadedVideos");
-          const downloads: ILibraryVideo[] = savedDownloads ? JSON.parse(savedDownloads) : [];
-          setDownloaded(downloads.some((item) => item._id === data._id));
-        } else {
-          setError(data.error || "Unable to load the video.");
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Unable to load the video.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchVideo();
-  }, [id]);
+  const channelId = video?.userId?._id;
+  const displayName = channelDisplayName(video?.userId);
 
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="mx-auto max-w-[1400px] space-y-6">
         <div className="flex items-center justify-between gap-4">
           <Link
             href="/"
@@ -268,170 +400,246 @@ export default function WatchPage() {
             <ChevronLeft className="h-4 w-4 text-yt-red" />
             Home
           </Link>
-          <p className="hidden text-sm text-yt-secondary sm:block">
+          <p className="hidden truncate text-sm text-yt-secondary sm:block">
             {video ? video.title : "Now watching"}
           </p>
         </div>
 
         {loading ? (
-          <WatchPageSkeleton />
+          <div className="grid gap-6 lg:grid-cols-[68fr_32fr]">
+            <WatchPageSkeleton />
+            <RelatedVideosSkeleton />
+          </div>
         ) : error ? (
           <div className="rounded-2xl border border-yt-red bg-yt-card p-12 text-center text-red-300">
             <p className="text-lg font-semibold">{error}</p>
             <p className="mt-3 text-sm text-yt-secondary">Return home and choose another upload.</p>
           </div>
         ) : video ? (
-          <div className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-yt-border bg-black">
-              <video
-                controls
-                poster={video.thumbnailUrl}
-                src={video.videoUrl}
-                className="aspect-video w-full bg-black object-contain"
-              />
-            </div>
-
-            <div className="rounded-2xl bg-yt-card p-5">
-              <h1 className="text-xl font-semibold text-white sm:text-2xl">{video.title}</h1>
-
-              <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <img
-                    src={video.userId.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(video.userId.channelName || video.userId.name || "Creator")}&backgroundType=gradientLinear&colors=red,black,slate`}
-                    alt={video.userId.name || "Creator"}
-                    className="h-10 w-10 shrink-0 rounded-full object-cover"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white">
-                      {video.userId.channelName || video.userId.name || "Creator"}
-                    </p>
-                    <p className="text-xs text-yt-secondary">{formatCount(subscriberCount)} subscribers</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSubscribe}
-                    className={`ml-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      subscribed
-                        ? "bg-yt-hover text-white hover:bg-white/15"
-                        : "bg-yt-red text-white hover:bg-[#CC0000]"
-                    }`}
-                  >
-                    {subscribed ? "Subscribed" : "Subscribe"}
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex overflow-hidden rounded-full bg-yt-hover">
-                    <button
-                      type="button"
-                      onClick={handleLike}
-                      className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
-                        liked ? "text-yt-red" : "text-white"
-                      }`}
-                    >
-                      <ThumbsUp className="h-5 w-5" />
-                      {formatCount(likes)}
-                    </button>
-                    <span className="my-2 w-px bg-yt-border" />
-                    <button
-                      type="button"
-                      onClick={handleDislike}
-                      className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
-                        disliked ? "text-yt-red" : "text-white"
-                      }`}
-                    >
-                      <ThumbsDown className="h-5 w-5" />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleShareClick}
-                    className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-                  >
-                    <Share className="h-5 w-5" />
-                    Share
-                  </button>
-                  <a
-                    href={video.videoUrl}
-                    download
-                    onClick={() => addVideoToDownloads(video)}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      downloaded
-                        ? "bg-[#1A6B3A] text-white hover:bg-[#1E7B44]"
-                        : "bg-yt-hover text-white hover:bg-white/15"
-                    }`}
-                  >
-                    <Download className="h-5 w-5" />
-                    {downloaded ? "Downloaded" : "Download"}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setShowComments((current) => !current)}
-                    className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-                  >
-                    <MessageSquare className="h-5 w-5" />
-                    {comments.length > 0 ? formatCount(comments.length) : ""}
-                  </button>
-                </div>
+          <div className="grid items-start gap-6 lg:grid-cols-[68fr_32fr]">
+            <div className="min-w-0 space-y-4">
+              <div className="overflow-hidden rounded-2xl border border-yt-border bg-black">
+                <video
+                  key={video.videoUrl}
+                  controls
+                  autoPlay
+                  poster={video.thumbnailUrl}
+                  src={video.videoUrl}
+                  className="aspect-video w-full bg-black object-contain"
+                />
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-3 text-xs text-yt-secondary">
-                <span className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
-                  {formatCount(video.views)} views
-                </span>
-                <span className="inline-flex items-center rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
-                  {formatDate(video.createdAt)}
-                </span>
-              </div>
-
-              <p className="mt-4 text-sm leading-6 text-yt-secondary">{video.description}</p>
-            </div>
-
-            {showComments && (
               <div className="rounded-2xl bg-yt-card p-5">
-                <h2 className="text-lg font-semibold text-white">
-                  {comments.length > 0 ? `${formatCount(comments.length)} Comments` : "Comments"}
-                </h2>
-                <form onSubmit={handleCommentSubmit} className="mt-4 space-y-3">
-                  <label className="block text-sm font-medium text-yt-secondary">Add a comment</label>
-                  <textarea
-                    value={commentText}
-                    onChange={(event) => setCommentText(event.target.value)}
-                    rows={3}
-                    className="w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none placeholder:text-yt-secondary focus:border-yt-red"
-                    placeholder="Write your comment..."
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
-                  >
-                    Post Comment
-                  </button>
-                </form>
-                {comments.length > 0 ? (
-                  <div className="mt-5 space-y-4">
-                    {comments.map((comment) => (
-                      <div key={comment._id ?? comment.createdAt} className="flex gap-3 text-sm text-yt-secondary">
-                        <img
-                          src={comment.userAvatar || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(comment.userName)}&backgroundType=gradientLinear&colors=red,black,slate`}
-                          alt={comment.userName}
-                          className="h-9 w-9 shrink-0 rounded-full object-cover"
-                        />
-                        <div>
-                          <p className="font-medium text-white">{comment.userName}</p>
-                          <p className="mt-1 text-white">{comment.content}</p>
-                          <p className="mt-1 text-xs text-yt-secondary">
-                            {new Date(comment.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                <h1 className="text-xl font-semibold text-white sm:text-2xl">{video.title}</h1>
+
+                <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Link href={`/channel/${channelId}`} className="shrink-0">
+                      <img
+                        src={video.userId?.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundType=gradientLinear&colors=red,black,slate`}
+                        alt={displayName}
+                        className="h-10 w-10 rounded-full object-cover transition hover:opacity-80"
+                      />
+                    </Link>
+                    <div className="min-w-0">
+                      <Link href={`/channel/${channelId}`} className="block">
+                        <p className="truncate text-sm font-semibold text-white transition hover:text-yt-red">
+                          {displayName}
+                        </p>
+                      </Link>
+                      <p className="text-xs text-yt-secondary">{formatCount(subscriberCount)} subscribers</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSubscribe}
+                      className={`ml-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        subscribed
+                          ? "bg-yt-hover text-white hover:bg-white/15"
+                          : "bg-yt-red text-white hover:bg-[#CC0000]"
+                      }`}
+                    >
+                      {subscribed ? "Subscribed" : "Subscribe"}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex overflow-hidden rounded-full bg-yt-hover">
+                      <button
+                        type="button"
+                        onClick={handleLike}
+                        aria-pressed={liked}
+                        className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
+                          liked ? "text-yt-red" : "text-white"
+                        }`}
+                      >
+                        <ThumbsUp className="h-5 w-5" />
+                        {formatCount(likes)}
+                      </button>
+                      <span className="my-2 w-px bg-yt-border" />
+                      <button
+                        type="button"
+                        onClick={handleDislike}
+                        aria-pressed={disliked}
+                        className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition hover:bg-white/15 ${
+                          disliked ? "text-yt-red" : "text-white"
+                        }`}
+                      >
+                        <ThumbsDown className="h-5 w-5" />
+                        {formatCount(dislikes)}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleShareClick}
+                      className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                    >
+                      <Share className="h-5 w-5" />
+                      Share
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownload}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        downloaded
+                          ? "bg-[#1A6B3A] text-white hover:bg-[#1E7B44]"
+                          : "bg-yt-hover text-white hover:bg-white/15"
+                      }`}
+                    >
+                      <Download className="h-5 w-5" />
+                      {downloaded ? "Downloaded" : "Download"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaveOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                    >
+                      <ListPlus className="h-5 w-5" />
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowComments((current) => !current)}
+                      className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                      {(comments || []).length > 0 ? formatCount((comments || []).length) : ""}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3 text-xs text-yt-secondary">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
+                    {formatCount(video?.views ?? 0)} views
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-yt-hover px-4 py-2 text-sm font-medium text-white">
+                    {formatDate(video.createdAt)}
+                  </span>
+                </div>
+
+                <p className="mt-4 text-sm leading-6 text-yt-secondary">{video.description}</p>
+              </div>
+
+              {showComments && (
+                <div className="rounded-2xl bg-yt-card p-5">
+                  <h2 className="text-lg font-semibold text-white">
+                    {(comments || []).length > 0 ? `${formatCount((comments || []).length)} Comments` : "Comments"}
+                  </h2>
+                  <form onSubmit={handleCommentSubmit} className="mt-4 space-y-3">
+                    <label className="block text-sm font-medium text-yt-secondary">Add a comment</label>
+                    <textarea
+                      value={commentText}
+                      onChange={(event) => setCommentText(event.target.value)}
+                      rows={3}
+                      className="w-full rounded-xl border border-yt-border bg-[#121212] px-4 py-3 text-sm text-white outline-none placeholder:text-yt-secondary focus:border-yt-red"
+                      placeholder="Write your comment..."
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+                    >
+                      Post Comment
+                    </button>
+                  </form>
+                  {(comments || []).length > 0 ? (
+                    <div className="mt-5 space-y-4">
+                      {(comments || []).map((comment) => (
+                        <div key={comment._id ?? comment.createdAt} className="flex gap-3 text-sm text-yt-secondary">
+                          <img
+                            src={comment.userAvatar || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(comment.userName)}&backgroundType=gradientLinear&colors=red,black,slate`}
+                            alt={comment.userName}
+                            className="h-9 w-9 shrink-0 rounded-full object-cover"
+                          />
+                          <div>
+                            <p className="font-medium text-white">{comment.userName}</p>
+                            <p className="mt-1 text-white">{comment.content}</p>
+                            <p className="mt-1 text-xs text-yt-secondary">
+                              {new Date(comment.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-yt-secondary">No comments yet. Be the first to share your thoughts.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <aside className="min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+              <div className="space-y-3">
+                <h2 className="px-1 text-sm font-semibold text-white">Related videos</h2>
+                {relatedLoading ? (
+                  <RelatedVideosSkeleton count={8} />
+                ) : (related || []).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-yt-border bg-yt-card p-8 text-center text-sm text-yt-secondary">
+                    No related videos found. Check back soon.
+                  </div>
+                ) : (
+                  (related || []).map((item) => {
+                    const channel = item.userId as IUserProfile | undefined;
+                    const channelName = channelDisplayName(channel);
+                    const duration = formatDuration(item.duration);
+                    return (
+                      <div
+                        key={item._id}
+                        className="group flex gap-2 rounded-xl p-2 transition hover:bg-yt-card"
+                      >
+                        <Link href={`/watch/${item._id}`} className="relative shrink-0">
+                          <img
+                            src={item.thumbnailUrl}
+                            alt={item.title}
+                            className="aspect-video w-40 rounded-lg object-cover"
+                          />
+                          {duration ? (
+                            <span className="absolute right-1 bottom-1 rounded bg-black/80 px-1 py-0.5 text-[11px] font-medium text-white">
+                              {duration}
+                            </span>
+                          ) : null}
+                        </Link>
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/watch/${item._id}`}>
+                            <h3 className="line-clamp-2 text-sm font-medium text-white transition group-hover:text-yt-red">
+                              {item.title}
+                            </h3>
+                          </Link>
+                          {channel ? (
+                            <Link href={`/channel/${channel._id}`}>
+                              <p className="mt-1 truncate text-xs text-yt-secondary transition hover:text-white">
+                                {channelName}
+                              </p>
+                            </Link>
+                          ) : null}
+                          <p className="mt-0.5 text-xs text-yt-secondary/80">
+                            {formatViews(item.views)} • {formatRelativeDate(item.createdAt)}
                           </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 text-sm text-yt-secondary">No comments yet. Be the first to share your thoughts.</p>
+                    );
+                  })
                 )}
               </div>
-            )}
+            </aside>
           </div>
         ) : null}
       </div>
@@ -482,6 +690,16 @@ export default function WatchPage() {
           </div>
         </div>
       )}
+
+      <SavePlaylistModal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        video={
+          video
+            ? { _id: video._id, title: video.title, thumbnailUrl: video.thumbnailUrl, videoUrl: video.videoUrl }
+            : null
+        }
+      />
     </main>
   );
 }

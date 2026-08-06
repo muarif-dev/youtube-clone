@@ -15,10 +15,10 @@ export async function GET() {
     await connectToDatabase();
     const videos = await Video.find({ userId: session.user.id }).sort({ createdAt: -1 });
     return NextResponse.json(videos, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("GET user videos Error:", error);
     return NextResponse.json(
-      { error: error?.message || "Error fetching user videos" },
+      { error: error instanceof Error ? error.message : "Error fetching user videos" },
       { status: 500 }
     );
   }
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
-    const { channelName, bio, image, subscribers } = body;
+    const { channelName, bio, image } = body;
 
     const updatedUser = await User.findByIdAndUpdate(
       session.user.id,
@@ -41,16 +41,15 @@ export async function POST(request: Request) {
         ...(channelName ? { channelName } : {}),
         ...(bio ? { bio } : {}),
         ...(image ? { image } : {}),
-        ...(typeof subscribers === "number" ? { subscribers } : {}),
       },
       { new: true }
     );
 
     return NextResponse.json(updatedUser, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST user profile Error:", error);
     return NextResponse.json(
-      { error: error?.message || "Error updating profile" },
+      { error: error instanceof Error ? error.message : "Error updating profile" },
       { status: 500 }
     );
   }

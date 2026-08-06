@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { CirclePlay, Download, Heart, History, ListVideo, Trash2, X } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { CirclePlay, Download, Heart, History, ListPlus, ListVideo, Plus, Trash2, X } from "lucide-react";
 import { formatCount } from "@/lib/video";
 import { usePlaylists } from "../components/PlaylistProvider";
 import { useToast } from "../components/ToastProvider";
@@ -23,6 +24,23 @@ interface ILikedVideo {
   videoUrl: string;
   likedAt?: string;
   watchedAt?: string;
+}
+
+interface ICustomPlaylist {
+  _id: string;
+  name: string;
+  count: number;
+  entries: Array<{ _id: string; title: string; thumbnailUrl: string; videoUrl: string }>;
+}
+
+const SYSTEM_NAMES = new Set(["Watch Later", "Favorites", "Music Mix"]);
+
+async function fetchCustomPlaylists(): Promise<ICustomPlaylist[]> {
+  const res = await fetch("/api/playlists", { credentials: "same-origin" });
+  if (!res.ok) return [];
+  const data = await res.json();
+  const list = Array.isArray(data.playlists) ? data.playlists : [];
+  return list.filter((playlist: ICustomPlaylist) => !SYSTEM_NAMES.has(playlist.name));
 }
 
 const tabs = [
@@ -52,8 +70,65 @@ export default function LibraryPage() {
   const [downloads, setDownloads] = useState<ILibraryVideo[]>([]);
   const [liked, setLiked] = useState<ILikedVideo[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const { status, data: session } = useSession();
   const { ready, playlists, removeFromPlaylist } = usePlaylists();
   const showToast = useToast();
+
+  const [customPlaylists, setCustomPlaylists] = useState<ICustomPlaylist[]>([]);
+  const [playlistsLoaded, setPlaylistsLoaded] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createName, setCreateName] = useState("");
+
+  const authenticated = status === "authenticated" && Boolean(session?.user?.id);
+
+  useEffect(() => {
+    if (status === "loading" || !authenticated) return;
+    let cancelled = false;
+    fetchCustomPlaylists()
+      .then((list) => {
+        if (!cancelled) setCustomPlaylists(list);
+      })
+      .catch((err) => console.error("Library: failed to load playlists:", err))
+      .finally(() => {
+        if (!cancelled) setPlaylistsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
+
+  const handleCreatePlaylist = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!authenticated) {
+      showToast("Please sign in to create playlists");
+      return;
+    }
+    const name = createName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/playlists", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, isPrivate: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Failed to create playlist");
+        return;
+      }
+      setCreateName("");
+      showToast(`Created "${name}"`);
+      const list = await fetchCustomPlaylists();
+      setCustomPlaylists(list);
+      setPlaylistsLoaded(true);
+    } catch {
+      showToast("Failed to create playlist");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -69,7 +144,7 @@ export default function LibraryPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  const items = activeTab === "History" ? history : downloads;
+  const items = (activeTab === "History" ? history : downloads) || [];
 
   const removeItem = async (entry: PlaylistEntry, playlistId: PlaylistId, playlistName: string) => {
     const ok = await removeFromPlaylist(entry._id, playlistId);
@@ -99,7 +174,7 @@ export default function LibraryPage() {
             <div>
               <h2 className="text-lg font-semibold text-white">Liked Videos</h2>
               <p className="text-sm text-yt-secondary">
-                {loaded ? `${formatCount(liked.length)} liked` : "Loading..."}
+                {loaded ? `${formatCount((liked || []).length)} liked` : "Loading..."}
               </p>
             </div>
           </div>
@@ -109,7 +184,7 @@ export default function LibraryPage() {
               <div className="rounded-2xl border border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
                 Loading liked videos...
               </div>
-            ) : liked.length === 0 ? (
+            ) : (liked || []).length === 0 ? (
               <div className="rounded-2xl border border-dashed border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
                 <Heart className="mx-auto mb-3 h-8 w-8" />
                 <p className="font-medium text-white">No liked videos yet</p>
@@ -123,7 +198,7 @@ export default function LibraryPage() {
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {liked.map((item) => (
+                {(liked || []).map((item) => (
                   <article key={item._id} className="group overflow-hidden rounded-2xl border border-yt-border bg-yt-bg transition hover:bg-yt-hover">
                     <Link href={`/watch/${item._id}`} className="block">
                       <div className="relative">
@@ -151,104 +226,220 @@ export default function LibraryPage() {
 
         {/* Playlists */}
         <section className="rounded-2xl border border-yt-border bg-yt-card p-6">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-yt-hover">
-              <ListVideo className="h-5 w-5 text-white" />
-            </span>
-            <div>
-              <h2 className="text-lg font-semibold text-white">Playlists</h2>
-              <p className="text-sm text-yt-secondary">Your saved collections</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-yt-hover">
+                <ListVideo className="h-5 w-5 text-white" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Playlists</h2>
+                <p className="text-sm text-yt-secondary">Your saved collections</p>
+              </div>
             </div>
+            {authenticated && !creating && (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-yt-red px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+              >
+                <Plus className="h-4 w-4" />
+                Create Playlist
+              </button>
+            )}
           </div>
+
+          {creating && (
+            <form
+              onSubmit={handleCreatePlaylist}
+              className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-yt-border bg-yt-bg p-4"
+            >
+              <input
+                autoFocus
+                value={createName}
+                onChange={(event) => setCreateName(event.target.value)}
+                placeholder="Playlist name"
+                className="min-w-0 flex-1 rounded-xl border border-yt-border bg-[#121212] px-4 py-2.5 text-sm text-white outline-none placeholder:text-yt-secondary focus:border-yt-red"
+              />
+              <button
+                type="submit"
+                disabled={!createName.trim() || creating}
+                className="inline-flex items-center gap-1.5 rounded-full bg-yt-red px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000] disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setCreateName("");
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full bg-yt-hover px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/15"
+              >
+                Cancel
+              </button>
+            </form>
+          )}
 
           {!ready ? (
             <div className="mt-5 rounded-2xl border border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
               Loading playlists...
             </div>
+          ) : status === "unauthenticated" ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
+              <ListVideo className="mx-auto mb-3 h-8 w-8" />
+              <p className="font-medium text-white">Please sign in to view your library and playlists.</p>
+              <p className="mt-1 text-sm">Sign in to access your saved playlists and collections.</p>
+              <Link
+                href="/auth/signin"
+                className="mt-5 inline-flex rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+              >
+                Sign in
+              </Link>
+            </div>
           ) : (
-            <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {PLAYLIST_META.map(({ id, name, color }) => {
-                const entries = playlists[id];
-                const count = entries.length;
-                const first = entries[0];
-                return (
-                  <div
-                    key={id}
-                    className="flex flex-col overflow-hidden rounded-2xl border border-yt-border bg-yt-bg"
-                  >
-                    <div className="relative h-24" style={{ background: color }}>
-                      {entries.slice(0, 3).map((entry, index) => (
-                        <img
-                          key={entry._id}
-                          src={entry.thumbnailUrl}
-                          alt=""
-                          className={`absolute inset-0 h-full object-cover ${index > 0 ? "opacity-50" : ""}`}
-                          style={{ zIndex: 3 - index }}
-                        />
-                      ))}
-                      <div className="absolute inset-0 bg-black/20" />
-                      <span className="absolute right-3 bottom-3 rounded-sm bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
-                        {count} {count === 1 ? "video" : "videos"}
-                      </span>
-                    </div>
-                    <div className="flex flex-1 flex-col p-4">
-                      <h3 className="text-base font-semibold text-white">{name}</h3>
-                      <div className="mt-3 flex items-center gap-2">
-                        {first ? (
-                          <Link
-                            href={`/watch/${first._id}`}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-yt-hover px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-white/15"
-                          >
-                            <CirclePlay className="h-4 w-4" />
-                            Play all
-                          </Link>
-                        ) : (
-                          <span className="text-xs text-yt-secondary">Nothing saved yet</span>
-                        )}
+            <>
+              <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {PLAYLIST_META.map(({ id, name, color }) => {
+                  const entries = playlists[id] || [];
+                  const count = entries.length;
+                  const first = entries[0];
+                  return (
+                    <div
+                      key={id}
+                      className="flex flex-col overflow-hidden rounded-2xl border border-yt-border bg-yt-bg"
+                    >
+                      <div className="relative h-24" style={{ background: color }}>
+                        {entries.slice(0, 3).map((entry, index) => (
+                          <img
+                            key={entry._id}
+                            src={entry.thumbnailUrl}
+                            alt=""
+                            className={`absolute inset-0 h-full object-cover ${index > 0 ? "opacity-50" : ""}`}
+                            style={{ zIndex: 3 - index }}
+                          />
+                        ))}
+                        <div className="absolute inset-0 bg-black/20" />
+                        <span className="absolute right-3 bottom-3 rounded-sm bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                          {count} {count === 1 ? "video" : "videos"}
+                        </span>
+                      </div>
+                      <div className="flex flex-1 flex-col p-4">
+                        <h3 className="text-base font-semibold text-white">{name}</h3>
+                        <div className="mt-3 flex items-center gap-2">
+                          {first ? (
+                            <Link
+                              href={`/watch/${first._id}`}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-yt-hover px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-white/15"
+                            >
+                              <CirclePlay className="h-4 w-4" />
+                              Play all
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-yt-secondary">Nothing saved yet</span>
+                          )}
+                          {count > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => clearPlaylist(id, name, entries)}
+                              className="inline-flex items-center gap-1.5 rounded-full bg-yt-hover px-3.5 py-1.5 text-xs font-medium text-yt-secondary transition hover:bg-white/15 hover:text-white"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Clear
+                            </button>
+                          )}
+                        </div>
                         {count > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => clearPlaylist(id, name, entries)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-yt-hover px-3.5 py-1.5 text-xs font-medium text-yt-secondary transition hover:bg-white/15 hover:text-white"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Clear
-                          </button>
+                          <ul className="mt-3 space-y-1 border-t border-yt-border pt-2">
+                            {entries.slice(0, 4).map((entry) => (
+                              <li key={entry._id} className="group flex items-center gap-2">
+                                <Link
+                                  href={`/watch/${entry._id}`}
+                                  className="line-clamp-1 min-w-0 flex-1 text-sm text-[#F1F1F1] transition hover:text-white"
+                                  title={entry.title}
+                                >
+                                  {entry.title}
+                                </Link>
+                                <button
+                                  type="button"
+                                  onClick={() => removeItem(entry, id, name)}
+                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-yt-secondary transition hover:bg-white/15 hover:text-white"
+                                  aria-label={`Remove ${entry.title} from ${name}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </li>
+                            ))}
+                            {count > 4 && (
+                              <li className="pt-1 text-xs text-yt-secondary">
+                                +{count - 4} more videos
+                              </li>
+                            )}
+                          </ul>
                         )}
                       </div>
-                      {count > 0 && (
-                        <ul className="mt-3 space-y-1 border-t border-yt-border pt-2">
-                          {entries.slice(0, 4).map((entry) => (
-                            <li key={entry._id} className="group flex items-center gap-2">
-                              <Link
-                                href={`/watch/${entry._id}`}
-                                className="line-clamp-1 min-w-0 flex-1 text-sm text-[#F1F1F1] transition hover:text-white"
-                                title={entry.title}
-                              >
-                                {entry.title}
-                              </Link>
-                              <button
-                                type="button"
-                                onClick={() => removeItem(entry, id, name)}
-                                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-yt-secondary transition hover:bg-white/15 hover:text-white"
-                                aria-label={`Remove ${entry.title} from ${name}`}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </li>
-                          ))}
-                          {count > 4 && (
-                            <li className="pt-1 text-xs text-yt-secondary">
-                              +{count - 4} more videos
-                            </li>
-                          )}
-                        </ul>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+            {authenticated && (
+                <div className="mt-8">
+                  <h3 className="text-base font-semibold text-white">Your playlists</h3>
+                  {!playlistsLoaded ? (
+                    <div className="mt-4 rounded-2xl border border-yt-border bg-yt-bg p-8 text-center text-yt-secondary">
+                      Loading your playlists...
+                    </div>
+                  ) : (customPlaylists || []).length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
+                      <ListPlus className="mx-auto mb-3 h-8 w-8" />
+                      <p className="font-medium text-white">No custom playlists yet</p>
+                      <p className="mt-1 text-sm">Create a playlist to organize your favorite videos.</p>
+                      <button
+                        type="button"
+                        onClick={() => setCreating(true)}
+                        className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Create Playlist
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                      {(customPlaylists || []).map((playlist) => (
+                        <Link
+                          key={playlist._id}
+                          href={`/playlist/${playlist._id}`}
+                          className="group flex flex-col overflow-hidden rounded-2xl border border-yt-border bg-yt-bg transition hover:border-white/20 hover:bg-yt-hover"
+                        >
+                          <div className="relative h-24">
+                            {(playlist.entries || []).slice(0, 3).map((entry, index) => (
+                              <img
+                                key={entry._id}
+                                src={entry.thumbnailUrl}
+                                alt=""
+                                className={`absolute inset-0 h-full object-cover ${index > 0 ? "opacity-50" : ""}`}
+                                style={{ zIndex: 3 - index }}
+                              />
+                            ))}
+                            <div className="absolute inset-0 bg-black/20" />
+                            <span className="absolute right-3 bottom-3 rounded-sm bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                              {playlist.count} {playlist.count === 1 ? "video" : "videos"}
+                            </span>
+                          </div>
+                          <div className="flex flex-1 items-center justify-between gap-2 p-4">
+                            <h4 className="line-clamp-2 text-base font-semibold text-white group-hover:text-yt-red">
+                              {playlist.name}
+                            </h4>
+                            <CirclePlay className="h-5 w-5 shrink-0 text-yt-secondary transition group-hover:text-white" />
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </section>
 
@@ -277,7 +468,7 @@ export default function LibraryPage() {
               <div className="rounded-2xl border border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
                 Loading library...
               </div>
-            ) : items.length === 0 ? (
+            ) : (items || []).length === 0 ? (
               <div className="rounded-2xl border border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
                 {activeTab === "History"
                   ? "Your watch history is empty. Watch a video to see it here."
@@ -285,7 +476,7 @@ export default function LibraryPage() {
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {items.map((item) => (
+                {(items || []).map((item) => (
                   <article key={item._id} className="overflow-hidden rounded-2xl border border-yt-border bg-yt-bg">
                     <Link href={`/watch/${item._id}`} className="block">
                       <img src={item.thumbnailUrl} alt={item.title} className="h-44 w-full object-cover" />

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import ProfileEditor from "../components/ProfileEditor";
 import { usePlaylists, type PlaylistsMap } from "../components/PlaylistProvider";
-import { formatDuration } from "@/lib/video";
+import { formatDuration, viewCount } from "@/lib/video";
 import { ChannelHeaderSkeleton, VideoGridSkeleton } from "../components/Skeletons";
 import type { PlaylistId } from "@/lib/playlists";
 
@@ -341,7 +341,7 @@ export default function ChannelPage() {
                                 </button>
                               </div>
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-yt-secondary">
-                                <span>{formatCount(video.views)} views</span>
+                                <span>{formatCount(viewCount(video.views))} views</span>
                                 <span className="inline-flex h-1.5 w-1.5 rounded-full bg-yt-border" />
                                 <span>{formatRelativeDate(video.createdAt)}</span>
                               </div>

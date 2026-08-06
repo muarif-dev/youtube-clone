@@ -113,28 +113,31 @@ export default function Home() {
               const displayName = channelDisplayName(channel);
               const duration = formatDuration(video.duration);
               return (
-                <Link
+                <div
                   key={video._id}
-                  href={`/watch/${video._id}`}
                   className="group overflow-hidden rounded-xl bg-yt-card transition hover:bg-yt-hover"
                 >
-                  <div className="relative overflow-hidden">
+                  <Link href={`/watch/${video._id}`} className="relative block overflow-hidden">
                     <img src={video.thumbnailUrl} alt={video.title} className="aspect-video w-full object-cover transition duration-300 group-hover:scale-105" />
                     {duration && (
                       <span className="absolute right-2 bottom-2 rounded-sm bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
                         {duration}
                       </span>
                     )}
-                  </div>
+                  </Link>
                   <div className="flex gap-3 p-3">
-                    <img
-                      src={channel?.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundType=gradientLinear&colors=red,black,slate`}
-                      alt="Channel avatar"
-                      className="h-9 w-9 rounded-full bg-yt-hover object-cover"
-                    />
+                    <Link href={`/channel/${channel?._id}`} className="shrink-0">
+                      <img
+                        src={channel?.image || `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(displayName)}&backgroundType=gradientLinear&colors=red,black,slate`}
+                        alt={displayName}
+                        className="h-9 w-9 rounded-full bg-yt-hover object-cover transition hover:opacity-80"
+                      />
+                    </Link>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start gap-1">
-                        <h2 className="line-clamp-2 flex-1 text-sm font-medium text-white">{video.title}</h2>
+                        <Link href={`/watch/${video._id}`} className="line-clamp-2 flex-1 text-sm font-medium text-white">
+                          {video.title}
+                        </Link>
                         <VideoCardMenu
                           video={{
                             _id: video._id,
@@ -144,11 +147,13 @@ export default function Home() {
                           }}
                         />
                       </div>
-                      <p className="mt-1 text-xs text-yt-secondary">{displayName}</p>
+                      <Link href={`/channel/${channel?._id}`}>
+                        <p className="mt-1 text-xs text-yt-secondary transition hover:text-white">{displayName}</p>
+                      </Link>
                       <p className="mt-1 text-xs text-yt-secondary/80">{formatViews(video.views)} • {formatRelativeDate(video.createdAt)}</p>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
