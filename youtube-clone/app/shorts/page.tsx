@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
+  ChevronDown,
+  ChevronUp,
   Share2,
   SquarePlay,
   ThumbsDown,
@@ -59,6 +61,14 @@ export default function ShortsPage() {
   const [muted, setMuted] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const videoEls = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollShorts = (direction: "up" | "down") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const step = container.clientHeight * 0.9;
+    container.scrollBy({ top: direction === "up" ? -step : step, behavior: "smooth" });
+  };
 
   useEffect(() => {
     async function fetchShorts() {
@@ -186,7 +196,7 @@ export default function ShortsPage() {
   );
 
   return (
-    <main className="flex h-[calc(100vh-56px)] flex-col overflow-hidden bg-yt-bg text-white">
+    <main className="relative flex h-[calc(100vh-56px)] flex-col overflow-hidden bg-yt-bg text-white">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-yt-card text-white">
@@ -207,7 +217,10 @@ export default function ShortsPage() {
         </button>
       </header>
 
-      <div className="h-[calc(100vh-56px)] min-h-0 flex-1 overflow-y-scroll snap-y snap-mandatory overscroll-contain scroll-smooth">
+      <div
+        ref={scrollContainerRef}
+        className="h-[calc(100vh-56px)] min-h-0 flex-1 overflow-y-scroll snap-y snap-mandatory overscroll-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <ShortsFeedSkeleton />
@@ -344,6 +357,25 @@ export default function ShortsPage() {
             </section>
           </>
         )}
+      </div>
+
+      <div className="pointer-events-none absolute right-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2 sm:right-6">
+        <button
+          type="button"
+          onClick={() => scrollShorts("up")}
+          aria-label="Previous short"
+          className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-yt-card/90 text-white shadow-lg backdrop-blur transition hover:bg-yt-hover"
+        >
+          <ChevronUp className="h-6 w-6" />
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollShorts("down")}
+          aria-label="Next short"
+          className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-yt-card/90 text-white shadow-lg backdrop-blur transition hover:bg-yt-hover"
+        >
+          <ChevronDown className="h-6 w-6" />
+        </button>
       </div>
 
       <UploadModal open={modalOpen} onClose={() => setModalOpen(false)} type="short" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
@@ -10,10 +10,11 @@ import {
   Share,
   Download,
   MessageSquare,
-  ChevronLeft,
   ListPlus,
   X,
   Check,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 import { WatchPageSkeleton, RelatedVideosSkeleton } from "../../components/Skeletons";
 import { useToast } from "../../components/ToastProvider";
@@ -92,6 +93,7 @@ function formatDate(createdAt: string) {
 export default function WatchPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
+  const router = useRouter();
   const { data: session } = useSession();
   const showToast = useToast();
 
@@ -106,10 +108,10 @@ export default function WatchPage() {
   const [dislikes, setDislikes] = useState(0);
   const [subscribed, setSubscribed] = useState(false);
   const [subscriberCount, setSubscriberCount] = useState(0);
-  const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<IComment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [downloaded, setDownloaded] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -201,7 +203,13 @@ export default function WatchPage() {
 
         const relatedData = await relatedRes.json();
         if (relatedRes.ok && Array.isArray(relatedData) && !cancelled) {
-          setRelated(relatedData);
+          const seen = new Set<string>(id ? [id] : []);
+          const deduped = relatedData.filter((item: IRelatedVideo) => {
+            if (seen.has(item._id)) return false;
+            seen.add(item._id);
+            return true;
+          });
+          setRelated(deduped);
         }
       } catch (err) {
         console.error(err);
@@ -335,7 +343,8 @@ export default function WatchPage() {
   };
 
   const handleDownload = async () => {
-    if (!video || downloaded) return;
+    if (!video || downloaded || isDownloading) return;
+    setIsDownloading(true);
     const fileName = `${(video.title || "video").replace(/[^a-zA-Z0-9]/g, "_")}.mp4`;
     try {
       const response = await fetch(video.videoUrl);
@@ -354,6 +363,27 @@ export default function WatchPage() {
     } catch (err) {
       console.error("Download failed:", err);
       showToast("Could not start download. The video may not be available offline.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!video) return;
+    if (!confirm("Delete this video permanently?")) return;
+    try {
+      const res = await fetch(`/api/videos/${video._id}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Video deleted");
+        router.push("/");
+        router.refresh();
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(`Failed to delete: ${data?.error || "Unknown server error"}`);
+      }
+    } catch (error) {
+      console.error("Delete video error:", error);
+      alert(error instanceof Error ? error.message : "Something went wrong");
     }
   };
 
@@ -376,7 +406,6 @@ export default function WatchPage() {
         setVideo(data);
         setComments(data.comments || []);
         setCommentText("");
-        setShowComments(true);
       } else {
         showToast(data.error || "Unable to post comment");
       }
@@ -389,22 +418,13 @@ export default function WatchPage() {
   const channelId = video?.userId?._id;
   const displayName = channelDisplayName(video?.userId);
 
+  const scrollToComments = () => {
+    document.getElementById("comments")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-[1400px] space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-yt-border bg-yt-card px-4 py-2 text-sm font-medium text-white transition hover:bg-yt-hover"
-          >
-            <ChevronLeft className="h-4 w-4 text-yt-red" />
-            Home
-          </Link>
-          <p className="hidden truncate text-sm text-yt-secondary sm:block">
-            {video ? video.title : "Now watching"}
-          </p>
-        </div>
-
         {loading ? (
           <div className="grid gap-6 lg:grid-cols-[68fr_32fr]">
             <WatchPageSkeleton />
@@ -499,14 +519,19 @@ export default function WatchPage() {
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      disabled={isDownloading}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                         downloaded
                           ? "bg-[#1A6B3A] text-white hover:bg-[#1E7B44]"
                           : "bg-yt-hover text-white hover:bg-white/15"
                       }`}
                     >
-                      <Download className="h-5 w-5" />
-                      {downloaded ? "Downloaded" : "Download"}
+                      {isDownloading ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : (
+                        <Download className="h-5 w-5" />
+                      )}
+                      {isDownloading ? "Downloading..." : downloaded ? "Downloaded" : "Download"}
                     </button>
                     <button
                       type="button"
@@ -518,12 +543,22 @@ export default function WatchPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setShowComments((current) => !current)}
+                      onClick={scrollToComments}
                       className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
                     >
                       <MessageSquare className="h-5 w-5" />
                       {(comments || []).length > 0 ? formatCount((comments || []).length) : ""}
                     </button>
+                    {session?.user?.id && video?.userId?._id === session.user.id && (
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500/20 hover:text-red-400"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -539,11 +574,10 @@ export default function WatchPage() {
                 <p className="mt-4 text-sm leading-6 text-yt-secondary">{video.description}</p>
               </div>
 
-              {showComments && (
-                <div className="rounded-2xl bg-yt-card p-5">
-                  <h2 className="text-lg font-semibold text-white">
-                    {(comments || []).length > 0 ? `${formatCount((comments || []).length)} Comments` : "Comments"}
-                  </h2>
+              <div id="comments" className="scroll-mt-20 rounded-2xl bg-yt-card p-5">
+                <h2 className="text-lg font-semibold text-white">
+                  {(comments || []).length > 0 ? `${formatCount((comments || []).length)} Comments` : "Comments"}
+                </h2>
                   <form onSubmit={handleCommentSubmit} className="mt-4 space-y-3">
                     <label className="block text-sm font-medium text-yt-secondary">Add a comment</label>
                     <textarea
@@ -583,7 +617,6 @@ export default function WatchPage() {
                     <p className="mt-4 text-sm text-yt-secondary">No comments yet. Be the first to share your thoughts.</p>
                   )}
                 </div>
-              )}
             </div>
 
             <aside className="min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
@@ -624,10 +657,18 @@ export default function WatchPage() {
                             </h3>
                           </Link>
                           {channel ? (
-                            <Link href={`/channel/${channel._id}`}>
-                              <p className="mt-1 truncate text-xs text-yt-secondary transition hover:text-white">
+                            <Link href={`/channel/${channel._id}`} className="mt-1 flex items-center gap-1.5">
+                              <img
+                                src={
+                                  channel.image ||
+                                  `https://api.dicebear.com/6.x/initials/svg?seed=${encodeURIComponent(channelName)}&backgroundType=gradientLinear&colors=red,black,slate`
+                                }
+                                alt={channelName}
+                                className="h-5 w-5 shrink-0 rounded-full bg-yt-hover object-cover"
+                              />
+                              <span className="truncate text-xs text-yt-secondary transition hover:text-white">
                                 {channelName}
-                              </p>
+                              </span>
                             </Link>
                           ) : null}
                           <p className="mt-0.5 text-xs text-yt-secondary/80">

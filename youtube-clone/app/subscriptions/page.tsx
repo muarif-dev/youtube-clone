@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession, signIn } from "next-auth/react";
 import { Bell, ChevronDown, CircleCheck, Radio } from "lucide-react";
 import {
   formatCount,
@@ -38,20 +39,15 @@ interface ISubscribedChannel {
 }
 
 export default function SubscriptionsPage() {
+  const { data: session, status } = useSession();
+  const authenticated = status === "authenticated" && Boolean(session?.user?.id);
+
   const [videos, setVideos] = useState<IVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
-  const [subscribed, setSubscribed] = useState<ISubscribedChannel[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const stored = window.localStorage.getItem("subscribedChannels");
-      return stored ? (JSON.parse(stored) as ISubscribedChannel[]) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [subscribed, setSubscribed] = useState<ISubscribedChannel[]>([]);
 
   const [lastVisited, setLastVisited] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -59,21 +55,54 @@ export default function SubscriptionsPage() {
   });
 
   useEffect(() => {
-    async function fetchVideos() {
+    let cancelled = false;
+    async function fetchSubscriptions() {
+      if (!authenticated) {
+        setVideos([]);
+        setSubscribed([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
-        const res = await fetch(`/api/videos`);
+        const res = await fetch(`/api/subscriptions`);
         const data = await res.json();
-        const list = Array.isArray(data) ? data : data.videos || [];
-        setVideos(list);
+        if (cancelled) return;
+        if (res.ok) {
+          const channels: ISubscribedChannel[] = Array.isArray(data.channels) ? data.channels : [];
+          const rawVideos: IVideo[] = Array.isArray(data.videos) ? data.videos : [];
+          const selfId = session?.user?.id ? String(session.user.id) : null;
+          const subscribedIds = new Set(channels.map((channel) => channel._id));
+          const filtered = rawVideos.filter((video) => {
+            const uid = video.userId?._id;
+            if (!uid) return false;
+            if (selfId && uid === selfId && !subscribedIds.has(uid)) return false;
+            return true;
+          });
+          setSubscribed(channels);
+          setVideos(filtered);
+          try {
+            window.localStorage.setItem("subscribedChannels", JSON.stringify(channels));
+          } catch {
+            // ignore storage errors
+          }
+        } else {
+          setVideos([]);
+          setSubscribed([]);
+        }
       } catch (err) {
         console.error("Error fetching subscription videos:", err);
         setVideos([]);
+        setSubscribed([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    fetchVideos();
-  }, []);
+    fetchSubscriptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, session?.user?.id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -87,34 +116,6 @@ export default function SubscriptionsPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, []);
-
-  const allChannels = useMemo(() => {
-    const map = new Map<string, IUserProfile>();
-    for (const video of videos) {
-      const user = video.userId;
-      if (user?._id && !map.has(user._id)) {
-        map.set(user._id, user);
-      }
-    }
-    return Array.from(map.values());
-  }, [videos]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const timer = setTimeout(() => {
-      if (window.localStorage.getItem("subscriptionsInitialized") === "1") return;
-      if (allChannels.length === 0) return;
-      const seed: ISubscribedChannel[] = allChannels.map((channel) => ({
-        _id: channel._id,
-        name: channelDisplayName(channel),
-        avatar: channel.image,
-      }));
-      setSubscribed(seed);
-      window.localStorage.setItem("subscribedChannels", JSON.stringify(seed));
-      window.localStorage.setItem("subscriptionsInitialized", "1");
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [allChannels]);
 
   const unreadByChannel = useMemo(() => {
     const seen = lastVisited ? new Date(lastVisited).getTime() : 0;
@@ -144,7 +145,16 @@ export default function SubscriptionsPage() {
   const selectedChannelSubs =
     videos.find((video) => video.userId?._id === selectedChannelId)?.userId?.subscribers ?? 0;
 
-  const unsubscribe = (channel: ISubscribedChannel) => {
+  const unsubscribe = async (channel: ISubscribedChannel) => {
+    try {
+      await fetch(`/api/channels/${channel._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unsubscribe" }),
+      });
+    } catch {
+      // ignore API errors
+    }
     setSubscribed((current) => {
       const next = current.filter((item) => item._id !== channel._id);
       try {
@@ -154,6 +164,7 @@ export default function SubscriptionsPage() {
       }
       return next;
     });
+    setVideos((current) => current.filter((video) => video.userId?._id !== channel._id));
     if (selectedChannelId === channel._id) {
       setSelectedChannelId(null);
     }
@@ -172,7 +183,42 @@ export default function SubscriptionsPage() {
           </div>
         </div>
 
-        <div className="border-b border-yt-border pb-4">
+        {status === "loading" ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {Array.from({ length: 16 }).map((_, index) => (
+              <div key={index} className="overflow-hidden rounded-xl bg-yt-card">
+                <div className="aspect-video w-full animate-pulse bg-gray-700/80" />
+                <div className="flex gap-3 p-3">
+                  <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-700/80" />
+                  <div className="flex-1 space-y-2 py-1">
+                    <div className="h-3 w-4/5 animate-pulse rounded bg-gray-700/80" />
+                    <div className="h-3 w-3/5 animate-pulse rounded bg-gray-700/80" />
+                    <div className="h-3 w-2/5 animate-pulse rounded bg-gray-700/80" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !authenticated ? (
+          <div className="mx-auto flex max-w-md flex-col items-center py-16 text-center">
+            <div className="mx-auto mb-6 inline-flex h-24 w-24 items-center justify-center rounded-full bg-yt-card">
+              <Bell className="h-12 w-12 text-yt-secondary" />
+            </div>
+            <h2 className="text-2xl font-semibold text-white">Sign in to see your subscriptions</h2>
+            <p className="mt-3 text-yt-secondary">
+              Your subscribed channels and their latest uploads will appear here once you sign in.
+            </p>
+            <button
+              type="button"
+              onClick={() => signIn()}
+              className="mt-8 inline-flex rounded-full bg-yt-red px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+            >
+              Sign In
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="border-b border-yt-border pb-4">
           <div className="flex gap-5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               type="button"
@@ -293,8 +339,20 @@ export default function SubscriptionsPage() {
         )}
 
         {loading ? (
-          <div className="rounded-2xl border border-dashed border-yt-border bg-yt-card p-12 text-center text-yt-secondary">
-            Loading subscriptions...
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {Array.from({ length: 16 }).map((_, index) => (
+              <div key={index} className="overflow-hidden rounded-xl bg-yt-card">
+                <div className="aspect-video w-full animate-pulse bg-gray-700/80" />
+                <div className="flex gap-3 p-3">
+                  <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-700/80" />
+                  <div className="flex-1 space-y-2 py-1">
+                    <div className="h-3 w-4/5 animate-pulse rounded bg-gray-700/80" />
+                    <div className="h-3 w-3/5 animate-pulse rounded bg-gray-700/80" />
+                    <div className="h-3 w-2/5 animate-pulse rounded bg-gray-700/80" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : subscribed.length === 0 ? (
           <div className="mx-auto max-w-md py-16 text-center">
@@ -317,22 +375,23 @@ export default function SubscriptionsPage() {
             No uploads from {selectedChannel ? selectedChannel.name : "your subscriptions"} yet.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {feedVideos.map((video) => {
               const channel = video.userId;
               const duration = formatDuration(video.duration);
               return (
-                <Link
+                <div
                   key={video._id}
-                  href={`/watch/${video._id}`}
                   className="group overflow-hidden rounded-xl bg-yt-card transition hover:bg-yt-hover"
                 >
                   <div className="relative overflow-hidden">
-                    <img
-                      src={video.thumbnailUrl}
-                      alt={video.title}
-                      className="aspect-video w-full object-cover transition duration-300 group-hover:scale-105"
-                    />
+                    <Link href={`/watch/${video._id}`}>
+                      <img
+                        src={video.thumbnailUrl}
+                        alt={video.title}
+                        className="aspect-video w-full object-cover transition duration-300 group-hover:scale-105"
+                      />
+                    </Link>
                     {duration && (
                       <span className="absolute right-2 bottom-2 rounded-sm bg-black/80 px-1.5 py-0.5 text-[11px] font-medium text-white">
                         {duration}
@@ -351,7 +410,11 @@ export default function SubscriptionsPage() {
                       />
                     </Link>
                     <div className="min-w-0">
-                      <h2 className="line-clamp-2 text-sm font-medium text-white">{video.title}</h2>
+                      <Link href={`/watch/${video._id}`}>
+                        <h2 className="line-clamp-2 text-sm font-medium text-white transition group-hover:text-yt-red">
+                          {video.title}
+                        </h2>
+                      </Link>
                       <Link href={`/channel/${channel?._id}`}>
                         <p className="mt-1 text-xs text-yt-secondary transition hover:text-white">
                           {channelDisplayName(channel)}
@@ -362,10 +425,12 @@ export default function SubscriptionsPage() {
                       </p>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
+        )}
+          </>
         )}
       </div>
     </main>

@@ -74,6 +74,26 @@ function readFileAsDataURL(file: File): Promise<string> {
   });
 }
 
+function getVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.onloadedmetadata = () => {
+      const duration = Number.isFinite(el.duration) ? el.duration : 0;
+      URL.revokeObjectURL(url);
+      resolve(Math.round(duration));
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(0);
+    };
+    el.src = url;
+  });
+}
+
+const CATEGORIES = ["Web Dev", "Gaming", "Music", "Tech", "Lifestyle"];
+
 const visibilityHints: Record<Visibility, string> = {
   Public: "Anyone can view this video.",
   Unlisted: "Only people with the link can view this video.",
@@ -87,6 +107,8 @@ export default function UploadModal({ open, onClose, type = "video" }: UploadMod
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("Public");
+  const [category, setCategory] = useState("Web Dev");
+  const [videoDuration, setVideoDuration] = useState(0);
 
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
@@ -124,6 +146,8 @@ export default function UploadModal({ open, onClose, type = "video" }: UploadMod
     setVideoProgress(0);
     try {
       const url = await uploadWithProgress(file, "video", setVideoProgress);
+      const seconds = await getVideoDuration(file);
+      setVideoDuration(seconds);
       setVideoUrl(url);
       setVideoStatus("done");
     } catch (error) {
@@ -156,30 +180,58 @@ export default function UploadModal({ open, onClose, type = "video" }: UploadMod
     thumbnailStatus === "done" &&
     !submitting;
 
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setCategory("Web Dev");
+    setVideoFile(null);
+    setVideoUrl("");
+    setVideoProgress(0);
+    setVideoStatus("idle");
+    setThumbnailFile(null);
+    setThumbnailPreview("");
+    setThumbnailUrl("");
+    setThumbnailProgress(0);
+    setThumbnailStatus("idle");
+    setSubmitting(false);
+  };
+
   const handlePublish = async () => {
     if (!canPublish) return;
     setSubmitting(true);
     try {
+      if (!videoUrl || !thumbnailUrl) {
+        throw new Error("Video or thumbnail URL is missing. Please re-upload the files.");
+      }
+      const payload = {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        videoUrl,
+        thumbnailUrl,
+        visibility,
+        duration: videoDuration,
+        type,
+      };
+      console.log("Submitting payload:", payload);
+
       const res = await fetch("/api/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          videoUrl,
-          thumbnailUrl,
-          type,
-        }),
+        body: JSON.stringify(payload),
       });
+
       const data = await res.json();
-      if (res.ok) {
-        onClose();
-        router.push("/");
-      } else {
-        alert(`Failed to save: ${data.error || "Unknown server error"}`);
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to publish video");
+
+      onClose();
+      resetForm();
+      router.push("/");
+      router.refresh();
+      window.location.reload();
     } catch (error) {
-      alert(`Something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`);
+      console.error("Upload Error:", error);
+      alert(`Upload failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setSubmitting(false);
     }
@@ -447,6 +499,25 @@ export default function UploadModal({ open, onClose, type = "video" }: UploadMod
                     className="w-full rounded-lg border border-[#5a5a5a] bg-[#121212] px-4 py-3 text-sm text-white placeholder:text-yt-secondary focus:border-yt-red focus:outline-none"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label htmlFor="upload-category" className="mb-2 block text-sm font-medium text-white">
+                  Category
+                </label>
+                <select
+                  id="upload-category"
+                  required
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className="w-full rounded-lg border border-[#5a5a5a] bg-[#121212] px-4 py-3 text-sm text-white focus:border-yt-red focus:outline-none"
+                >
+                  {CATEGORIES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

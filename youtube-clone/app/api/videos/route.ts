@@ -1,31 +1,34 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/db";
 import Video from "@/models/Video";
 import User from "@/models/User";
 import Notification from "@/models/Notification";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get("query")?.trim() || "";
+    const queryText = searchParams.get("query")?.trim() || "";
     const type = searchParams.get("type") || "all";
-    const category = searchParams.get("category") || "All";
+    const category = searchParams.get("category")?.trim() || "";
 
     await connectToDatabase();
     const filter: Record<string, unknown> = {};
-    if (query) {
+    if (queryText) {
       filter.$or = [
-        { title: { $regex: query, $options: "i" } },
-        { description: { $regex: query, $options: "i" } },
+        { title: { $regex: queryText, $options: "i" } },
+        { description: { $regex: queryText, $options: "i" } },
       ];
     }
     if (type !== "all") {
       filter.type = type;
     }
-    if (category && category !== "All") {
-      filter.category = category;
+    if (category && category.toLowerCase() !== "all") {
+      filter.category = { $regex: new RegExp(`^${category}$`, "i") };
     }
 
     const videos = await Video.find(filter)
@@ -38,7 +41,10 @@ export async function GET(request: Request) {
         const dislikedBy = Array.isArray(obj.dislikedBy) ? obj.dislikedBy.map((x: unknown) => String(x)) : [];
         return { ...obj, likes: likedBy.length, dislikes: dislikedBy.length };
       }),
-      { status: 200 }
+      {
+        status: 200,
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      }
     );
   } catch (error: unknown) {
     console.error("GET Error:", error);
@@ -58,7 +64,7 @@ export async function POST(request: Request) {
   try {
     await connectToDatabase();
     const body = await request.json();
-    const { title, description, videoUrl, thumbnailUrl, category, type } = body;
+    const { title, description, videoUrl, thumbnailUrl, category, duration, type } = body;
 
     if (!title || !description || !videoUrl || !thumbnailUrl) {
       return NextResponse.json(
@@ -72,7 +78,8 @@ export async function POST(request: Request) {
       description,
       videoUrl,
       thumbnailUrl,
-      category: category || "General",
+      category: category || "All",
+      duration: Number(duration) || 0,
       type: type || "video",
       userId: session.user.id,
     });
@@ -97,6 +104,9 @@ export async function POST(request: Request) {
         }))
       );
     }
+
+    revalidatePath("/");
+    revalidatePath("/subscriptions");
 
     return NextResponse.json(createdVideo, { status: 201 });
   } catch (error: unknown) {

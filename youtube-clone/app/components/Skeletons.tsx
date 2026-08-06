@@ -16,7 +16,7 @@ export function VideoCardSkeleton() {
   );
 }
 
-export function VideoGridSkeleton({ count = 8 }: { count?: number }) {
+export function VideoGridSkeleton({ count = 16 }: { count?: number }) {
   return (
     <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
       {Array.from({ length: count }).map((_, index) => (
@@ -110,6 +110,30 @@ export function ListSkeleton({ count = 5 }: { count?: number }) {
     <div className="space-y-3">
       {Array.from({ length: count }).map((_, index) => (
         <div key={index} className="h-16 animate-pulse rounded-xl bg-yt-card" />
+      ))}
+    </div>
+  );
+}
+
+export function SearchResultRowSkeleton() {
+  return (
+    <div className="flex gap-4 rounded-xl bg-yt-card p-3">
+      <div className="aspect-video w-40 shrink-0 animate-pulse rounded-lg bg-gray-700/80 sm:w-64" />
+      <div className="flex-1 space-y-2 py-1">
+        <div className="h-4 w-3/4 animate-pulse rounded bg-gray-700/80" />
+        <div className="h-3 w-1/2 animate-pulse rounded bg-gray-700/80" />
+        <div className="h-3 w-2/5 animate-pulse rounded bg-gray-700/80" />
+        <div className="mt-2 h-3 w-3/5 animate-pulse rounded bg-gray-700/80" />
+      </div>
+    </div>
+  );
+}
+
+export function SearchResultsSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="mt-6 space-y-4">
+      {Array.from({ length: count }).map((_, index) => (
+        <SearchResultRowSkeleton key={index} />
       ))}
     </div>
   );

@@ -8,13 +8,11 @@ import {
   Bell,
   Clapperboard,
   Menu,
-  Plus,
   Radio,
   Search,
   ThumbsUp,
   Upload,
   X,
-  ChevronDown,
   UserRound,
   Library,
   Settings,
@@ -307,11 +305,16 @@ export default function AppHeader() {
               <button
                 type="button"
                 onClick={handleAvatarClick}
-                className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-full bg-[#111111] px-2 text-sm font-medium text-white ring-1 ring-white/20 transition hover:bg-yt-hover"
+                className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-transparent transition hover:opacity-80"
                 aria-label="Account menu"
               >
-                {displayName.charAt(0).toUpperCase()}
-                <ChevronDown className="hidden h-4 w-4 text-yt-secondary sm:block" />
+                {session.user?.image ? (
+                  <img src={session.user.image} alt={displayName} className="h-8 w-8 rounded-full object-cover" />
+                ) : (
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-600">
+                    <UserRound className="h-5 w-5 text-gray-300" />
+                  </span>
+                )}
               </button>
               {menuOpen && (
                 <>
@@ -378,7 +381,7 @@ export default function AppHeader() {
               href="/auth/signin"
               className="inline-flex h-10 items-center gap-2 rounded-full border border-yt-border bg-yt-card px-4 text-sm font-medium text-white transition hover:bg-yt-hover"
             >
-              <Plus className="h-5 w-5" />
+              <UserRound className="h-5 w-5 text-yt-secondary" />
               Sign In
             </Link>
           )}

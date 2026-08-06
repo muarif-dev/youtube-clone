@@ -17,11 +17,22 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const related = await Video.find({
       _id: { $ne: id },
       userId: { $exists: true },
-      $or: [{ category: current.category }, { userId: current.userId }],
+      category: current.category,
     })
       .sort({ createdAt: -1 })
       .limit(Math.max(1, Math.min(limit, 50)))
       .populate("userId", "name channelName image");
+
+    if (related.length === 0) {
+      const fallback = await Video.find({
+        _id: { $ne: id },
+        userId: current.userId,
+      })
+        .sort({ createdAt: -1 })
+        .limit(Math.max(1, Math.min(limit, 50)))
+        .populate("userId", "name channelName image");
+      return NextResponse.json(fallback, { status: 200 });
+    }
 
     return NextResponse.json(related, { status: 200 });
   } catch (error: unknown) {

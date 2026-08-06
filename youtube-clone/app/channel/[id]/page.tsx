@@ -22,7 +22,9 @@ interface IUserProfile {
   image?: string;
   bio?: string;
   createdAt?: string;
-  subscribers?: string[];
+  subscribers?: string[] | number;
+  subscribedTo?: string[];
+  subscribersCount?: number;
 }
 
 interface IVideo {
@@ -37,6 +39,23 @@ interface IVideo {
 }
 
 const tabs = ["Home", "Videos", "About"];
+
+function getSubscriberCount(user: IUserProfile | null | undefined, fallbackCount?: unknown): number {
+  if (!user) {
+    const fallback = Number(fallbackCount);
+    return Number.isFinite(fallback) ? fallback : 0;
+  }
+  if (Array.isArray(user.subscribers)) return user.subscribers.length;
+  if (Array.isArray(user.subscribedTo)) return user.subscribedTo.length;
+  if (typeof user.subscribersCount === "number" && Number.isFinite(user.subscribersCount)) {
+    return user.subscribersCount;
+  }
+  if (typeof user.subscribers === "number" && Number.isFinite(user.subscribers)) {
+    return user.subscribers;
+  }
+  const fallback = Number(fallbackCount);
+  return Number.isFinite(fallback) ? fallback : 0;
+}
 
 export default function ChannelPublicPage() {
   const params = useParams();
@@ -69,9 +88,7 @@ export default function ChannelPublicPage() {
         if (cancelled) return;
         setChannel(data.user);
         setVideos(Array.isArray(data.videos) ? data.videos : []);
-        setSubscriberCount(
-          Array.isArray(data.user?.subscribers) ? data.user.subscribers.length : data.subscriberCount ?? 0
-        );
+        setSubscriberCount(getSubscriberCount(data.user, data.subscriberCount));
         setSubscribed(Boolean(data.subscribed));
         setIsOwner(Boolean(data.isOwner));
       } catch {
@@ -104,7 +121,8 @@ export default function ChannelPublicPage() {
       const data = await res.json();
       if (res.ok) {
         setSubscribed(Boolean(data.subscribed));
-        setSubscriberCount(typeof data.subscriberCount === "number" ? data.subscriberCount : 0);
+        const count = Number(data.subscriberCount);
+        setSubscriberCount(Number.isFinite(count) ? count : 0);
         showToast(data.subscribed ? "Subscribed to channel" : "Unsubscribed");
       } else {
         showToast(data.error || "Unable to update subscription");
@@ -162,6 +180,13 @@ export default function ChannelPublicPage() {
     </div>
   );
 
+  const safeSubscriberCount =
+    Array.isArray(channel?.subscribers)
+      ? channel.subscribers.length
+      : typeof channel?.subscribers === "number"
+        ? channel.subscribers
+        : 0;
+
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -201,7 +226,8 @@ export default function ChannelPublicPage() {
                       <p className="text-xs uppercase tracking-[0.3em] text-yt-red">Channel</p>
                       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{displayName}</h1>
                       <p className="mt-1 text-sm text-yt-secondary">
-                        {formatCount(subscriberCount)} subscribers
+                        {safeSubscriberCount.toLocaleString()}{" "}
+                        subscribers
                         {videos.length > 0 ? ` • ${formatCount(videos.length)} videos` : ""}
                       </p>
                     </div>
@@ -295,7 +321,9 @@ export default function ChannelPublicPage() {
                       <Users className="h-4 w-4" />
                       Subscribers
                     </p>
-                    <p className="mt-2 text-sm text-white">{formatCount(subscriberCount)}</p>
+                    <p className="mt-2 text-sm text-white">
+                      {safeSubscriberCount.toLocaleString()}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-yt-border bg-yt-card p-5">
                     <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-yt-secondary">

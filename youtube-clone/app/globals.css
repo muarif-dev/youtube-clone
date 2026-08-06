@@ -16,6 +16,24 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@layer base {
+  button:not(:disabled),
+  [role="button"],
+  a[href],
+  select,
+  summary,
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [disabled] {
+    cursor: not-allowed;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }
