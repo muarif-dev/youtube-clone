@@ -10,9 +10,8 @@ import {
 } from "react";
 import { useSession } from "next-auth/react";
 import {
+  emptyStore,
   getPlaylists,
-  mergeStores,
-  persistPlaylists,
   removeEntry,
   upsertEntry,
   type PlaylistEntry,
@@ -100,11 +99,6 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (!ready) return;
-    persistPlaylists(playlists);
-  }, [ready, playlists]);
-
-  useEffect(() => {
     if (status === "loading") return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
@@ -118,14 +112,18 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
           const serverPlaylists = Array.isArray(data.playlists) ? (data.playlists as ServerPlaylist[]) : [];
           if (!cancelled) {
             setKeyToId(buildKeyToId(serverPlaylists));
-            setPlaylists((current) => mergeStores(current, normalizeStore(serverPlaylists)));
+            setPlaylists((current) => ({
+              ...current,
+              ...normalizeStore(serverPlaylists),
+            }));
           }
         } catch (err) {
-          console.error("PlaylistProvider: failed to load server playlists, keeping local cache:", err);
+          console.error("PlaylistProvider: failed to load server playlists:", err);
         } finally {
           if (!cancelled) setReady(true);
         }
       } else {
+        setPlaylists(emptyStore());
         setReady(true);
       }
     }, 0);
@@ -155,13 +153,13 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
 
   const saveToPlaylist = useCallback(
     async (video: PlaylistSource, playlistId: PlaylistId): Promise<boolean> => {
+      if (!authenticated) {
+        console.log("PlaylistProvider: sign in required to save to playlists");
+        return false;
+      }
+
       const entry = toEntry(video);
       setPlaylists((current) => upsertEntry(current, playlistId, entry));
-
-      if (!authenticated) {
-        console.log(`PlaylistProvider: saved "${entry.title}" to ${playlistId} locally (not authenticated)`);
-        return true;
-      }
 
       const playlistDocId = keyToId[playlistId];
       if (!playlistDocId) {
@@ -193,12 +191,12 @@ export function PlaylistProvider({ children }: { children: ReactNode }) {
 
   const removeFromPlaylist = useCallback(
     async (videoId: string, playlistId: PlaylistId): Promise<boolean> => {
-      setPlaylists((current) => removeEntry(current, playlistId, videoId));
-
       if (!authenticated) {
-        console.log(`PlaylistProvider: removed ${videoId} from ${playlistId} locally (not authenticated)`);
-        return true;
+        console.log("PlaylistProvider: sign in required to update playlists");
+        return false;
       }
+
+      setPlaylists((current) => removeEntry(current, playlistId, videoId));
 
       const playlistDocId = keyToId[playlistId];
       if (!playlistDocId) {

@@ -19,7 +19,7 @@ interface PlaylistView {
   isPrivate: boolean;
   containsVideo: boolean;
   count: number;
-  entries: Array<{ _id: string; title: string; thumbnailUrl: string; videoUrl: string }>;
+  entries: Array<{ _id: string; title: string; thumbnailUrl: string; videoUrl: string; duration?: number | string }>;
 }
 
 function toVideoIds(values: unknown): string[] {
@@ -43,14 +43,15 @@ async function buildViews(
   const allIds = docs.flatMap((doc) => toVideoIds(doc.videos));
   const uniqueIds = Array.from(new Set(allIds));
   const videoDocs = uniqueIds.length
-    ? await Video.find({ _id: { $in: uniqueIds } }).select("title thumbnailUrl videoUrl")
+    ? await Video.find({ _id: { $in: uniqueIds } }).select("title thumbnailUrl videoUrl duration")
     : [];
-  const videoMap = new Map<string, { title: string; thumbnailUrl: string; videoUrl: string }>();
+  const videoMap = new Map<string, { title: string; thumbnailUrl: string; videoUrl: string; duration?: number | string }>();
   for (const v of videoDocs) {
     videoMap.set(String(v._id), {
       title: v.title,
       thumbnailUrl: v.thumbnailUrl,
       videoUrl: v.videoUrl,
+      duration: v.duration,
     });
   }
   return docs.map((doc) => {
@@ -59,10 +60,12 @@ async function buildViews(
       .map((id) => {
         const meta = videoMap.get(id);
         return meta
-          ? { _id: id, title: meta.title, thumbnailUrl: meta.thumbnailUrl, videoUrl: meta.videoUrl }
+          ? { _id: id, title: meta.title, thumbnailUrl: meta.thumbnailUrl, videoUrl: meta.videoUrl, duration: meta.duration }
           : null;
       })
-      .filter((entry): entry is { _id: string; title: string; thumbnailUrl: string; videoUrl: string } => Boolean(entry));
+      .filter(
+        (entry): entry is { _id: string; title: string; thumbnailUrl: string; videoUrl: string; duration: string | number | undefined } => Boolean(entry)
+      );
     return {
       _id: String(doc._id),
       name: doc.name,

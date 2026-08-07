@@ -51,6 +51,13 @@ function formatCount(count: number) {
   return new Intl.NumberFormat("en-US", { notation: "compact", compactDisplay: "short" }).format(count);
 }
 
+function safeSubscriberCount(value: unknown): number {
+  if (!value) return 0;
+  if (Array.isArray(value)) return value.length;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
 function formatRelativeDate(createdAt: string) {
   const diff = Date.now() - new Date(createdAt).getTime();
   const day = 1000 * 60 * 60 * 24;
@@ -183,6 +190,27 @@ export default function ChannelPage() {
     </div>
   );
 
+  if (status === "unauthenticated") {
+    return (
+      <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center py-16 text-center">
+          <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-yt-card">
+            <Clapperboard className="h-8 w-8 text-yt-secondary" />
+          </span>
+          <h1 className="mt-6 text-2xl font-semibold text-white">
+            Enjoy your favorite videos. Sign in to access your channel, library, and subscriptions.
+          </h1>
+          <Link
+            href="/auth/signin"
+            className="mt-8 inline-flex rounded-full bg-yt-red px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+          >
+            Sign In
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -216,7 +244,7 @@ export default function ChannelPage() {
                   <div className="text-left sm:text-right">
                     <p className="text-xs uppercase tracking-[0.25em] text-yt-secondary">Subscribers</p>
                     <p className="mt-1 text-2xl font-semibold text-white">
-                      {formatCount(profile?.subscribers || 0)}
+                      {formatCount(safeSubscriberCount(profile?.subscribers))}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">

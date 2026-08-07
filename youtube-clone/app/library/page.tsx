@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { CirclePlay, Download, Heart, History, ListPlus, ListVideo, Plus, Trash2, X } from "lucide-react";
-import { formatCount } from "@/lib/video";
+import { formatCount, formatDuration } from "@/lib/video";
 import { usePlaylists } from "../components/PlaylistProvider";
 import { useToast } from "../components/ToastProvider";
 import type { PlaylistId, PlaylistEntry } from "@/lib/playlists";
@@ -14,6 +14,7 @@ interface ILibraryVideo {
   title: string;
   thumbnailUrl: string;
   videoUrl: string;
+  duration?: number | string;
   watchedAt: string;
 }
 
@@ -22,6 +23,7 @@ interface ILikedVideo {
   title: string;
   thumbnailUrl: string;
   videoUrl: string;
+  duration?: number | string;
   likedAt?: string;
   watchedAt?: string;
 }
@@ -132,19 +134,68 @@ export default function LibraryPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (status === "loading" || !authenticated) return;
     const timer = setTimeout(() => {
       const savedHistory = window.localStorage.getItem("watchHistory");
       const savedDownloads = window.localStorage.getItem("downloadedVideos");
-      const savedLiked = window.localStorage.getItem("likedVideos");
       setHistory(savedHistory ? JSON.parse(savedHistory) : []);
       setDownloads(savedDownloads ? JSON.parse(savedDownloads) : []);
-      setLiked(savedLiked ? JSON.parse(savedLiked) : []);
       setLoaded(true);
     }, 0);
     return () => clearTimeout(timer);
-  }, []);
+  }, [status, authenticated]);
+
+  useEffect(() => {
+    if (status === "loading" || !authenticated || !session?.user?.id) return;
+    let cancelled = false;
+    fetch(`/api/videos?likedBy=${encodeURIComponent(session.user.id)}`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : data.videos || [];
+        setLiked(
+          list.map((video: { _id: string; title: string; thumbnailUrl: string; videoUrl: string; duration?: number | string; createdAt?: string }) => ({
+            _id: video._id,
+            title: video.title,
+            thumbnailUrl: video.thumbnailUrl,
+            videoUrl: video.videoUrl,
+            duration: video.duration,
+            likedAt: video.createdAt,
+          }))
+        );
+        setLoaded(true);
+      })
+      .catch((err) => console.error("Library: failed to load liked videos:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [status, authenticated, session?.user?.id]);
 
   const items = (activeTab === "History" ? history : downloads) || [];
+
+  if (status === "unauthenticated") {
+    return (
+      <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center py-16 text-center">
+          <span className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-yt-card">
+            <ListVideo className="h-8 w-8 text-yt-secondary" />
+          </span>
+          <h1 className="mt-6 text-2xl font-semibold text-white">
+            Enjoy your favorite videos. Sign in to access your channel, library, and subscriptions.
+          </h1>
+          <p className="mt-3 text-sm text-yt-secondary">
+            Sign in to see your library, liked videos, and saved collections.
+          </p>
+          <Link
+            href="/auth/signin"
+            className="mt-8 inline-flex rounded-full bg-yt-red px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
+          >
+            Sign In
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   const removeItem = async (entry: PlaylistEntry, playlistId: PlaylistId, playlistName: string) => {
     const ok = await removeFromPlaylist(entry._id, playlistId);
@@ -203,6 +254,11 @@ export default function LibraryPage() {
                     <Link href={`/watch/${item._id}`} className="block">
                       <div className="relative">
                         <img src={item.thumbnailUrl} alt={item.title} className="h-40 w-full object-cover" />
+                        {item.duration ? (
+                          <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">
+                            {formatDuration(item.duration)}
+                          </span>
+                        ) : null}
                         <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
                           <CirclePlay className="h-10 w-10 text-white" />
                         </span>
@@ -284,18 +340,6 @@ export default function LibraryPage() {
           {!ready ? (
             <div className="mt-5 rounded-2xl border border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
               Loading playlists...
-            </div>
-          ) : status === "unauthenticated" ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-yt-border bg-yt-bg p-10 text-center text-yt-secondary">
-              <ListVideo className="mx-auto mb-3 h-8 w-8" />
-              <p className="font-medium text-white">Please sign in to view your library and playlists.</p>
-              <p className="mt-1 text-sm">Sign in to access your saved playlists and collections.</p>
-              <Link
-                href="/auth/signin"
-                className="mt-5 inline-flex rounded-full bg-yt-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#CC0000]"
-              >
-                Sign in
-              </Link>
             </div>
           ) : (
             <>
@@ -479,7 +523,14 @@ export default function LibraryPage() {
                 {(items || []).map((item) => (
                   <article key={item._id} className="overflow-hidden rounded-2xl border border-yt-border bg-yt-bg">
                     <Link href={`/watch/${item._id}`} className="block">
-                      <img src={item.thumbnailUrl} alt={item.title} className="h-44 w-full object-cover" />
+                      <div className="relative">
+                        <img src={item.thumbnailUrl} alt={item.title} className="h-44 w-full object-cover" />
+                        {item.duration ? (
+                          <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">
+                            {formatDuration(item.duration)}
+                          </span>
+                        ) : null}
+                      </div>
                     </Link>
                     <div className="p-4">
                       <Link href={`/watch/${item._id}`} className="line-clamp-2 text-lg font-semibold text-white hover:text-yt-red">

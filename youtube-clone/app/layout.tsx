@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body suppressHydrationWarning className={`${inter.className} bg-yt-bg text-white`}>
+      <body suppressHydrationWarning className={`${inter.className} no-scrollbar bg-yt-bg text-white`}>
         <Providers>
           <SidebarProvider>
             <ToastProvider>

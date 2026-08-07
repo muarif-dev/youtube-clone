@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { ChevronLeft, CirclePlay, ListVideo, Trash2, X } from "lucide-react";
 import { useToast } from "../../components/ToastProvider";
-import { formatCount } from "@/lib/video";
+import { formatCount, formatDuration } from "@/lib/video";
 
 function PlaylistPageSkeleton() {
   return (
@@ -41,6 +41,7 @@ interface IPlaylistVideo {
   title: string;
   thumbnailUrl: string;
   videoUrl: string;
+  duration?: number | string;
 }
 
 interface IPlaylist {
@@ -262,6 +263,11 @@ export default function PlaylistDetailPage() {
                     <Link href={`/watch/${entry._id}`} className="block">
                       <div className="relative">
                         <img src={entry.thumbnailUrl} alt={entry.title} className="h-40 w-full object-cover" />
+                        {entry.duration ? (
+                          <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-white">
+                            {formatDuration(entry.duration)}
+                          </span>
+                        ) : null}
                         <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
                           <CirclePlay className="h-10 w-10 text-white" />
                         </span>

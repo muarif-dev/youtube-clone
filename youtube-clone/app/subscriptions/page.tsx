@@ -204,7 +204,9 @@ export default function SubscriptionsPage() {
             <div className="mx-auto mb-6 inline-flex h-24 w-24 items-center justify-center rounded-full bg-yt-card">
               <Bell className="h-12 w-12 text-yt-secondary" />
             </div>
-            <h2 className="text-2xl font-semibold text-white">Sign in to see your subscriptions</h2>
+            <h2 className="text-2xl font-semibold text-white">
+              Enjoy your favorite videos. Sign in to access your channel, library, and subscriptions.
+            </h2>
             <p className="mt-3 text-yt-secondary">
               Your subscribed channels and their latest uploads will appear here once you sign in.
             </p>

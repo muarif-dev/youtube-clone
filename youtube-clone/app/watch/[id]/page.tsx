@@ -15,10 +15,12 @@ import {
   Check,
   Loader2,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { WatchPageSkeleton, RelatedVideosSkeleton } from "../../components/Skeletons";
 import { useToast } from "../../components/ToastProvider";
 import SavePlaylistModal from "../../components/SavePlaylistModal";
+import EditVideoModal from "../../components/EditVideoModal";
 import { formatCount, formatDuration, formatViews, formatRelativeDate, channelDisplayName } from "@/lib/video";
 
 interface IComment {
@@ -44,6 +46,7 @@ interface IVideo {
   description: string;
   videoUrl: string;
   thumbnailUrl: string;
+  category?: string;
   views: number;
   likes: number;
   dislikes?: number;
@@ -79,6 +82,7 @@ interface ILibraryVideo {
   title: string;
   thumbnailUrl: string;
   videoUrl: string;
+  duration?: number | string;
   watchedAt: string;
 }
 
@@ -115,6 +119,7 @@ export default function WatchPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [interactionBusy, setInteractionBusy] = useState(false);
 
   const addVideoToHistory = useCallback((currentVideo: IVideo) => {
@@ -126,6 +131,7 @@ export default function WatchPage() {
       title: currentVideo.title,
       thumbnailUrl: currentVideo.thumbnailUrl,
       videoUrl: currentVideo.videoUrl,
+      duration: currentVideo.duration,
       watchedAt: new Date().toISOString(),
     };
     const nextHistory = [nextEntry, ...history.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
@@ -141,34 +147,11 @@ export default function WatchPage() {
       title: currentVideo.title,
       thumbnailUrl: currentVideo.thumbnailUrl,
       videoUrl: currentVideo.videoUrl,
+      duration: currentVideo.duration,
       watchedAt: new Date().toISOString(),
     };
     const nextDownloads = [nextDownload, ...downloads.filter((item) => item._id !== currentVideo._id)].slice(0, 20);
     window.localStorage.setItem("downloadedVideos", JSON.stringify(nextDownloads));
-  }, []);
-
-  const toggleVideoInLikedStorage = useCallback((currentVideo: IVideo, nowLiked: boolean) => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem("likedVideos");
-    const likedVideos: ILibraryVideo[] = raw ? JSON.parse(raw) : [];
-    if (nowLiked) {
-      const entry: ILibraryVideo = {
-        _id: currentVideo._id,
-        title: currentVideo.title,
-        thumbnailUrl: currentVideo.thumbnailUrl,
-        videoUrl: currentVideo.videoUrl,
-        watchedAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem(
-        "likedVideos",
-        JSON.stringify([entry, ...likedVideos.filter((item) => item._id !== currentVideo._id)].slice(0, 20))
-      );
-    } else {
-      window.localStorage.setItem(
-        "likedVideos",
-        JSON.stringify(likedVideos.filter((item) => item._id !== currentVideo._id))
-      );
-    }
   }, []);
 
   useEffect(() => {
@@ -236,6 +219,26 @@ export default function WatchPage() {
     }
     if (interactionBusy) return;
     setInteractionBusy(true);
+
+    const prevLikes = likes;
+    const prevDislikes = dislikes;
+    const prevLiked = liked;
+    const prevDisliked = disliked;
+
+    setLiked(!prevLiked);
+    setLikes(!prevLiked ? prevLikes + (prevDisliked ? 0 : 1) : Math.max(0, prevLikes - 1));
+    if (prevDisliked) {
+      setDisliked(false);
+      setDislikes(Math.max(0, prevDislikes - 1));
+    }
+
+    const revert = () => {
+      setLiked(prevLiked);
+      setDisliked(prevDisliked);
+      setLikes(prevLikes);
+      setDislikes(prevDislikes);
+    };
+
     try {
       const res = await fetch(`/api/videos/${video._id}/like`, {
         method: "PATCH",
@@ -251,11 +254,12 @@ export default function WatchPage() {
         setDislikes(data?.dislikesCount ?? data?.dislikes ?? 0);
         setLiked(nowLiked);
         setDisliked(nowDisliked);
-        toggleVideoInLikedStorage(data, nowLiked);
       } else {
+        revert();
         showToast(data?.error || "Unable to update like");
       }
     } catch {
+      revert();
       showToast("Unable to update like");
     } finally {
       setInteractionBusy(false);
@@ -270,6 +274,26 @@ export default function WatchPage() {
     }
     if (interactionBusy) return;
     setInteractionBusy(true);
+
+    const prevLikes = likes;
+    const prevDislikes = dislikes;
+    const prevLiked = liked;
+    const prevDisliked = disliked;
+
+    setDisliked(!prevDisliked);
+    setDislikes(!prevDisliked ? prevDislikes + (prevLiked ? 0 : 1) : Math.max(0, prevDislikes - 1));
+    if (prevLiked) {
+      setLiked(false);
+      setLikes(Math.max(0, prevLikes - 1));
+    }
+
+    const revert = () => {
+      setLiked(prevLiked);
+      setDisliked(prevDisliked);
+      setLikes(prevLikes);
+      setDislikes(prevDislikes);
+    };
+
     try {
       const res = await fetch(`/api/videos/${video._id}/dislike`, {
         method: "PATCH",
@@ -285,11 +309,12 @@ export default function WatchPage() {
         setDislikes(data?.dislikesCount ?? data?.dislikes ?? 0);
         setLiked(nowLiked);
         setDisliked(nowDisliked);
-        toggleVideoInLikedStorage(data, nowLiked);
       } else {
+        revert();
         showToast(data?.error || "Unable to update dislike");
       }
     } catch {
+      revert();
       showToast("Unable to update dislike");
     } finally {
       setInteractionBusy(false);
@@ -306,20 +331,31 @@ export default function WatchPage() {
     if (!channelId) return;
     if (interactionBusy) return;
     setInteractionBusy(true);
+    const nextSubscribed = !subscribed;
+    const prevSubscriberCount = subscriberCount;
+    setSubscribed(nextSubscribed);
+    setSubscriberCount((prev) => Math.max(0, prev + (nextSubscribed ? 1 : -1)));
     try {
       const res = await fetch(`/api/channels/${channelId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: subscribed ? "unsubscribe" : "subscribe" }),
+        body: JSON.stringify({ action: nextSubscribed ? "subscribe" : "unsubscribe" }),
       });
       const data = await res.json();
       if (res.ok) {
         setSubscribed(Boolean(data.subscribed));
-        setSubscriberCount(data.subscriberCount || 0);
+        const count = Number(data.subscriberCount);
+        setSubscriberCount(Number.isFinite(count) && count >= 0 ? count : prevSubscriberCount);
+        router.refresh();
+        showToast(nextSubscribed ? "Subscribed to channel" : "Unsubscribed");
       } else {
+        setSubscribed(!nextSubscribed);
+        setSubscriberCount(prevSubscriberCount);
         showToast(data.error || "Unable to update subscription");
       }
     } catch {
+      setSubscribed(!nextSubscribed);
+      setSubscriberCount(prevSubscriberCount);
       showToast("Unable to update subscription");
     } finally {
       setInteractionBusy(false);
@@ -366,6 +402,11 @@ export default function WatchPage() {
     } finally {
       setIsDownloading(false);
     }
+  };
+
+  const handleVideoSaved = (updates: Partial<IVideo>) => {
+    setVideo((current) => (current ? { ...current, ...updates } : current));
+    router.refresh();
   };
 
   const handleDelete = async () => {
@@ -550,14 +591,24 @@ export default function WatchPage() {
                       {(comments || []).length > 0 ? formatCount((comments || []).length) : ""}
                     </button>
                     {session?.user?.id && video?.userId?._id === session.user.id && (
-                      <button
-                        type="button"
-                        onClick={handleDelete}
-                        className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500/20 hover:text-red-400"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                        Delete
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditOpen(true)}
+                          className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
+                        >
+                          <Pencil className="h-5 w-5" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDelete}
+                          className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500/20 hover:text-red-400"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                          Delete
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -740,6 +791,13 @@ export default function WatchPage() {
             ? { _id: video._id, title: video.title, thumbnailUrl: video.thumbnailUrl, videoUrl: video.videoUrl }
             : null
         }
+      />
+
+      <EditVideoModal
+        open={editOpen}
+        video={video}
+        onClose={() => setEditOpen(false)}
+        onSaved={handleVideoSaved}
       />
     </main>
   );

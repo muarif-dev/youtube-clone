@@ -51,6 +51,15 @@ body {
   background: var(--color-yt-hover);
 }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

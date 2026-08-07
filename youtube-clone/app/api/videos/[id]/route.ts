@@ -92,11 +92,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
 
     const body = await request.json();
-    const { action, comment, title, description, thumbnailUrl } = body as {
+    const { action, comment, title, description, category, thumbnailUrl } = body as {
       action?: string;
       comment?: string;
       title?: string;
       description?: string;
+      category?: string;
       thumbnailUrl?: string;
     };
 
@@ -192,6 +193,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const updates: Record<string, unknown> = {};
       if (title) updates.title = title;
       if (description) updates.description = description;
+      if (category) updates.category = category;
       if (thumbnailUrl) updates.thumbnailUrl = thumbnailUrl;
 
       updatedVideo = await Video.findByIdAndUpdate(id, updates, { new: true });

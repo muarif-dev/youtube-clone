@@ -196,7 +196,7 @@ export default function ShortsPage() {
   );
 
   return (
-    <main className="relative flex h-[calc(100vh-56px)] flex-col overflow-hidden bg-yt-bg text-white">
+    <main className="no-scrollbar relative -mt-16 flex h-[calc(100vh-56px)] flex-col overflow-hidden bg-yt-bg text-white md:-mt-6">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-yt-card text-white">
@@ -219,7 +219,7 @@ export default function ShortsPage() {
 
       <div
         ref={scrollContainerRef}
-        className="h-[calc(100vh-56px)] min-h-0 flex-1 overflow-y-scroll snap-y snap-mandatory overscroll-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="h-[calc(100vh-56px)] min-h-0 flex-1 overflow-y-scroll snap-y snap-mandatory overscroll-contain scroll-smooth scrollbar-none [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {loading ? (
           <div className="flex h-full items-center justify-center">

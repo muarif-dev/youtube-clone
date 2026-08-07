@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { CalendarDays, Pencil, Users } from "lucide-react";
@@ -60,6 +60,7 @@ function getSubscriberCount(user: IUserProfile | null | undefined, fallbackCount
 export default function ChannelPublicPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
+  const router = useRouter();
   const { data: session } = useSession();
   const showToast = useToast();
 
@@ -112,22 +113,31 @@ export default function ChannelPublicPage() {
     }
     if (busy) return;
     setBusy(true);
+    const nextSubscribed = !subscribed;
+    const prevSubscriberCount = subscriberCount;
+    setSubscribed(nextSubscribed);
+    setSubscriberCount((prev) => Math.max(0, prev + (nextSubscribed ? 1 : -1)));
     try {
       const res = await fetch(`/api/channels/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: subscribed ? "unsubscribe" : "subscribe" }),
+        body: JSON.stringify({ action: nextSubscribed ? "subscribe" : "unsubscribe" }),
       });
       const data = await res.json();
       if (res.ok) {
         setSubscribed(Boolean(data.subscribed));
         const count = Number(data.subscriberCount);
-        setSubscriberCount(Number.isFinite(count) ? count : 0);
+        setSubscriberCount(Number.isFinite(count) && count >= 0 ? count : prevSubscriberCount);
+        router.refresh();
         showToast(data.subscribed ? "Subscribed to channel" : "Unsubscribed");
       } else {
+        setSubscribed(!nextSubscribed);
+        setSubscriberCount(prevSubscriberCount);
         showToast(data.error || "Unable to update subscription");
       }
     } catch {
+      setSubscribed(!nextSubscribed);
+      setSubscriberCount(prevSubscriberCount);
       showToast("Unable to update subscription");
     } finally {
       setBusy(false);
@@ -180,13 +190,6 @@ export default function ChannelPublicPage() {
     </div>
   );
 
-  const safeSubscriberCount =
-    Array.isArray(channel?.subscribers)
-      ? channel.subscribers.length
-      : typeof channel?.subscribers === "number"
-        ? channel.subscribers
-        : 0;
-
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -226,7 +229,7 @@ export default function ChannelPublicPage() {
                       <p className="text-xs uppercase tracking-[0.3em] text-yt-red">Channel</p>
                       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">{displayName}</h1>
                       <p className="mt-1 text-sm text-yt-secondary">
-                        {safeSubscriberCount.toLocaleString()}{" "}
+                        {subscriberCount.toLocaleString()}{" "}
                         subscribers
                         {videos.length > 0 ? ` • ${formatCount(videos.length)} videos` : ""}
                       </p>
@@ -322,7 +325,7 @@ export default function ChannelPublicPage() {
                       Subscribers
                     </p>
                     <p className="mt-2 text-sm text-white">
-                      {safeSubscriberCount.toLocaleString()}
+                      {subscriberCount.toLocaleString()}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-yt-border bg-yt-card p-5">

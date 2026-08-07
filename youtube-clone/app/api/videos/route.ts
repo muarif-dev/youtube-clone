@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const queryText = searchParams.get("query")?.trim() || "";
     const type = searchParams.get("type") || "all";
     const category = searchParams.get("category")?.trim() || "";
+    const likedBy = searchParams.get("likedBy")?.trim() || "";
 
     await connectToDatabase();
     const filter: Record<string, unknown> = {};
@@ -29,6 +30,9 @@ export async function GET(request: Request) {
     }
     if (category && category.toLowerCase() !== "all") {
       filter.category = { $regex: new RegExp(`^${category}$`, "i") };
+    }
+    if (likedBy) {
+      filter.likedBy = likedBy;
     }
 
     const videos = await Video.find(filter)
