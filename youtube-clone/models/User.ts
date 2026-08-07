@@ -37,7 +37,7 @@ const UserSchema = new Schema(
     password: { type: String, required: true },
     image: { type: String },
     channelName: { type: String, trim: true },
-    bio: { type: String, default: "Creator on YouTube Clone" },
+    bio: { type: String, default: "Creator on Stream Hub" },
     subscribers: { type: [String], default: [] },
     subscribedTo: { type: [String], default: [] },
     playlists: {

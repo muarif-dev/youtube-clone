@@ -101,7 +101,7 @@ export default function SearchResults() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-yt-bg px-4 pt-20 pb-24 text-white md:pb-10">
         <Search className="h-12 w-12 text-yt-secondary" />
-        <h1 className="text-xl font-semibold text-white">Search YouTube</h1>
+        <h1 className="text-xl font-semibold text-white">Search Stream Hub</h1>
         <p className="text-sm text-yt-secondary">Type in the search bar above to find videos and shorts.</p>
       </main>
     );

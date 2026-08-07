@@ -13,11 +13,12 @@ const navItems = [
   { label: "My Channel", href: "/channel", icon: CircleUser },
 ];
 
-function YouTubeLogo({ onNavigate }: { onNavigate?: () => void }) {
+function StreamHubLogo({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <Link
       href="/"
       onClick={onNavigate}
+      aria-label="Stream Hub Home"
       className="inline-flex shrink-0 items-center gap-2 px-4 py-3 text-lg font-semibold tracking-tight text-white"
     >
       <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-yt-red text-white">
@@ -25,7 +26,7 @@ function YouTubeLogo({ onNavigate }: { onNavigate?: () => void }) {
           <path d="M8 5v14l11-7z" />
         </svg>
       </span>
-      <span className="hidden sm:inline">YouTube</span>
+      <span className="hidden sm:inline">Stream Hub</span>
     </Link>
   );
 }
@@ -52,7 +53,7 @@ export default function Sidebar() {
         }`}
       >
         <div className="flex h-14 items-center justify-between border-b border-yt-border pr-3">
-          <YouTubeLogo onNavigate={closeMobile} />
+          <StreamHubLogo onNavigate={closeMobile} />
           <button
             type="button"
             onClick={toggleMobile}
@@ -71,7 +72,9 @@ export default function Sidebar() {
                 href={item.href}
                 onClick={closeMobile}
                 className={`flex items-center gap-4 rounded-xl px-4 py-3 text-sm font-medium transition ${
-                  isActive ? "bg-yt-hover text-white" : "text-yt-secondary hover:bg-yt-hover hover:text-white"
+                  isActive
+                    ? "bg-neutral-800 font-semibold text-white"
+                    : "text-yt-secondary hover:bg-yt-hover hover:text-white"
                 }`}
               >
                 <item.icon className="h-6 w-6" />
@@ -99,7 +102,9 @@ export default function Sidebar() {
                 className={`flex items-center gap-4 rounded-xl py-3 text-sm font-medium transition ${
                   collapsed ? "justify-center px-0" : "px-4"
                 } ${
-                  isActive ? "bg-yt-hover text-white" : "text-yt-secondary hover:bg-yt-hover hover:text-white"
+                  isActive
+                    ? "bg-neutral-800 font-semibold text-white"
+                    : "text-yt-secondary hover:bg-yt-hover hover:text-white"
                 }`}
               >
                 <item.icon className="h-6 w-6 shrink-0" />
@@ -114,7 +119,7 @@ export default function Sidebar() {
             <Menu className="mx-auto h-5 w-5 text-yt-secondary" />
           ) : (
             <p className="text-[11px] leading-4 text-yt-secondary">
-              YouTube Clone
+              Stream Hub
               <br />
               Next.js + MongoDB + Cloudinary
             </p>

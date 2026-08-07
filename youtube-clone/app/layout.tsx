@@ -13,8 +13,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "YouTube Clone",
-  description: "A YouTube clone built with Next.js, MongoDB, and Cloudinary",
+  title: "Stream Hub",
+  description: "Watch, upload, and share your favorite videos on Stream Hub.",
 };
 
 export default function RootLayout({

@@ -60,6 +60,50 @@ body {
   scrollbar-width: none;
 }
 
+video {
+  color-scheme: dark;
+}
+
+video::-webkit-media-controls {
+  align-items: center;
+}
+
+video::-webkit-media-controls-panel {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  color: #fff;
+  border-bottom-left-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+}
+
+video::-webkit-media-controls-enclosure {
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+video::-webkit-media-controls-play-button,
+video::-webkit-media-controls-mute-button,
+video::-webkit-media-controls-toggle-closed-captions-button,
+video::-webkit-media-controls-volume-slider,
+video::-webkit-media-controls-fullscreen-button,
+video::-webkit-media-controls-seek-back-button,
+video::-webkit-media-controls-seek-forward-button {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+video::-webkit-media-controls-current-time-display,
+video::-webkit-media-controls-time-remaining-display {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+video::-webkit-media-controls-timeline {
+  margin: 0 12px;
+}
+
+video::-webkit-media-controls-volume-slider {
+  padding: 0 8px;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

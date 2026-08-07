@@ -91,14 +91,12 @@ export function RelatedVideosSkeleton({ count = 8 }: { count?: number }) {
 
 export function ShortsFeedSkeleton() {
   return (
-    <div className="mx-auto flex h-[80vh] w-full max-w-sm items-center justify-center">
-      <div className="relative aspect-[9/16] w-full max-w-sm animate-pulse overflow-hidden rounded-2xl bg-yt-card">
-        <div className="absolute inset-0 flex flex-col gap-4 p-6">
-          <div className="h-6 w-24 rounded bg-yt-hover" />
-          <div className="mt-auto space-y-3">
-            <div className="h-4 w-3/4 rounded bg-yt-hover" />
-            <div className="h-4 w-1/2 rounded bg-yt-hover" />
-          </div>
+    <div className="relative aspect-[9/16] w-full max-w-[300px] animate-pulse overflow-hidden rounded-2xl bg-yt-card sm:max-w-[340px]">
+      <div className="absolute inset-0 flex flex-col gap-4 p-6">
+        <div className="h-6 w-24 rounded bg-yt-hover" />
+        <div className="mt-auto space-y-3">
+          <div className="h-4 w-3/4 rounded bg-yt-hover" />
+          <div className="h-4 w-1/2 rounded bg-yt-hover" />
         </div>
       </div>
     </div>

@@ -145,7 +145,6 @@ export default function ChannelPublicPage() {
   };
 
   const displayName = channelDisplayName(channel);
-  const latestVideo = videos[0];
   const channelHref = id ? `/channel/${id}` : "/";
 
   const renderVideoGrid = (items: IVideo[]) => (
@@ -281,20 +280,6 @@ export default function ChannelPublicPage() {
 
             {activeTab === "Home" && (
               <div className="space-y-8">
-                {latestVideo ? (
-                  <section>
-                    <p className="text-lg font-semibold text-white">Latest upload</p>
-                    <div className="mt-4 overflow-hidden rounded-2xl border border-yt-border bg-black">
-                      <video
-                        controls
-                        poster={latestVideo.thumbnailUrl}
-                        src={latestVideo.videoUrl}
-                        className="aspect-video w-full bg-black object-contain"
-                      />
-                    </div>
-                  </section>
-                ) : null}
-
                 <section className="space-y-4">
                   <p className="text-lg font-semibold text-white">Videos</p>
                   {videos.length === 0 ? renderEmptyVideos() : renderVideoGrid(videos)}

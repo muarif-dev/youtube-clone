@@ -145,13 +145,17 @@ export default function AppHeader() {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <Link href="/" className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-lg font-semibold tracking-tight text-white">
+          <Link
+            href="/"
+            aria-label="Stream Hub Home"
+            className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-lg font-semibold tracking-tight text-white"
+          >
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-yt-red text-white">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </span>
-            <span className="hidden sm:inline">YouTube</span>
+            <span className="hidden sm:inline">Stream Hub</span>
           </Link>
         </div>
 

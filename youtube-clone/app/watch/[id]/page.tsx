@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -9,13 +9,20 @@ import {
   ThumbsDown,
   Share,
   Download,
-  MessageSquare,
   ListPlus,
   X,
   Check,
   Loader2,
   Trash2,
   Pencil,
+  Play,
+  Pause,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  Settings,
+  Maximize,
+  RotateCcw,
 } from "lucide-react";
 import { WatchPageSkeleton, RelatedVideosSkeleton } from "../../components/Skeletons";
 import { useToast } from "../../components/ToastProvider";
@@ -94,6 +101,20 @@ function formatDate(createdAt: string) {
   });
 }
 
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+
 export default function WatchPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
@@ -121,6 +142,110 @@ export default function WatchPage() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [interactionBusy, setInteractionBusy] = useState(false);
+
+  const videoElementRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [isEnded, setIsEnded] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+
+  const togglePlay = () => {
+    const el = videoElementRef.current;
+    if (!el) return;
+    if (isEnded) {
+      el.currentTime = 0;
+      setIsEnded(false);
+      void el.play();
+      setIsPlaying(true);
+      return;
+    }
+    if (el.paused) {
+      void el.play();
+      setIsPlaying(true);
+    } else {
+      el.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const toggleMute = () => {
+    const el = videoElementRef.current;
+    if (!el) return;
+    if (isMuted) {
+      el.muted = false;
+      el.volume = volume || 1;
+      setIsMuted(false);
+    } else {
+      el.muted = true;
+      setIsMuted(true);
+    }
+  };
+
+  const handleVolumeChange = (event: FormEvent<HTMLInputElement>) => {
+    const el = videoElementRef.current;
+    if (!el) return;
+    const newVolume = Number((event.target as HTMLInputElement).value);
+    setVolume(newVolume);
+    el.volume = newVolume;
+    el.muted = newVolume === 0;
+    setIsMuted(newVolume === 0);
+  };
+
+  const handleTimeUpdate = () => {
+    const el = videoElementRef.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration === 0) return;
+    setCurrentTime(el.currentTime);
+    setProgress((el.currentTime / el.duration) * 100);
+  };
+
+  const handleNextVideo = () => {
+    if (related.length > 0) {
+      router.push(`/watch/${related[0]._id}`);
+    } else {
+      showToast("No next video available");
+    }
+  };
+
+  const changePlaybackRate = (rate: number) => {
+    const el = videoElementRef.current;
+    if (el) el.playbackRate = rate;
+    setPlaybackRate(rate);
+    setSettingsOpen(false);
+  };
+
+  const handleLoadedMetadata = () => {
+    const el = videoElementRef.current;
+    if (el && Number.isFinite(el.duration)) {
+      setVideoDuration(el.duration);
+      setProgress(0);
+      setIsEnded(false);
+    }
+  };
+
+  const handleSeek = (event: FormEvent<HTMLInputElement>) => {
+    const el = videoElementRef.current;
+    if (!el) return;
+    const value = Number((event.target as HTMLInputElement).value);
+    setProgress(value);
+    if (Number.isFinite(el.duration) && el.duration > 0) {
+      el.currentTime = (value / 100) * el.duration;
+    }
+  };
+
+  const toggleFullScreen = () => {
+    const el = videoElementRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else if (el.requestFullscreen) {
+      void el.requestFullscreen();
+    }
+  };
 
   const addVideoToHistory = useCallback((currentVideo: IVideo) => {
     if (typeof window === "undefined") return;
@@ -459,10 +584,6 @@ export default function WatchPage() {
   const channelId = video?.userId?._id;
   const displayName = channelDisplayName(video?.userId);
 
-  const scrollToComments = () => {
-    document.getElementById("comments")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   return (
     <main className="min-h-screen bg-yt-bg px-4 pb-24 text-white sm:px-6 md:pb-10 lg:px-8">
       <div className="mx-auto max-w-[1400px] space-y-6">
@@ -479,15 +600,152 @@ export default function WatchPage() {
         ) : video ? (
           <div className="grid items-start gap-6 lg:grid-cols-[68fr_32fr]">
             <div className="min-w-0 space-y-4">
-              <div className="overflow-hidden rounded-2xl border border-yt-border bg-black">
+              <div className="group relative aspect-video w-full overflow-hidden rounded-xl border border-yt-border bg-black">
                 <video
                   key={video.videoUrl}
-                  controls
+                  ref={videoElementRef}
                   autoPlay
                   poster={video.thumbnailUrl}
                   src={video.videoUrl}
-                  className="aspect-video w-full bg-black object-contain"
+                  className="block h-full w-full object-contain"
+                  onClick={togglePlay}
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    setIsEnded(false);
+                  }}
+                  onPause={() => setIsPlaying(false)}
+                  onEnded={() => {
+                    setIsPlaying(false);
+                    setIsEnded(true);
+                  }}
+                  onTimeUpdate={handleTimeUpdate}
+                  onLoadedMetadata={handleLoadedMetadata}
                 />
+
+                {!isPlaying && (
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 transition group-hover:bg-black/40"
+                    aria-label={isEnded ? "Replay" : "Play"}
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition group-hover:bg-white/30">
+                      {isEnded ? (
+                        <RotateCcw className="h-8 w-8 text-white" />
+                      ) : (
+                        <Play className="h-8 w-8 translate-x-0.5 text-white" />
+                      )}
+                    </span>
+                  </button>
+                )}
+
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent pt-12 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
+                  <div className="mb-1 w-full px-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={progress}
+                      onChange={handleSeek}
+                      className="h-1 w-full cursor-pointer rounded accent-yt-red transition-all hover:h-2"
+                      aria-label="Seek"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between px-2 pb-2 text-white">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="rounded-full p-1.5 transition hover:bg-white/20"
+                        aria-label={isPlaying ? "Pause" : "Play"}
+                      >
+                        {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNextVideo}
+                        className="rounded-full p-1.5 transition hover:bg-white/20"
+                        aria-label="Next video"
+                      >
+                        <SkipForward className="h-5 w-5" />
+                      </button>
+
+                      <div className="flex items-center rounded-full px-1 py-1 transition group/vol hover:bg-white/10">
+                        <button
+                          type="button"
+                          onClick={toggleMute}
+                          className="p-1 transition hover:text-yt-red"
+                          aria-label={isMuted ? "Unmute" : "Mute"}
+                        >
+                          {isMuted || volume === 0 ? (
+                            <VolumeX className="h-5 w-5" />
+                          ) : (
+                            <Volume2 className="h-5 w-5" />
+                          )}
+                        </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={isMuted ? 0 : volume}
+                          onChange={handleVolumeChange}
+                          className="h-1 w-0 cursor-pointer overflow-hidden rounded bg-white/30 accent-yt-red opacity-0 transition-all duration-300 ease-in-out group-hover/vol:ml-2 group-hover/vol:w-16 group-hover/vol:opacity-100"
+                          aria-label="Volume"
+                        />
+                      </div>
+
+                      <span className="ml-2 select-none text-xs font-medium text-gray-200 tabular-nums">
+                        {formatTime(currentTime)} / {formatTime(videoDuration)}
+                      </span>
+                    </div>
+
+                    <div className="relative flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSettingsOpen((open) => !open)}
+                        className="rounded-full p-1.5 transition hover:bg-white/20"
+                        aria-label="Settings"
+                        aria-expanded={settingsOpen}
+                      >
+                        <Settings className="h-5 w-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={toggleFullScreen}
+                        className="rounded-full p-1.5 transition hover:bg-white/20"
+                        aria-label="Fullscreen"
+                      >
+                        <Maximize className="h-5 w-5" />
+                      </button>
+
+                      {settingsOpen && (
+                        <div className="absolute bottom-full right-0 mb-2 w-44 overflow-hidden rounded-lg border border-yt-border bg-[#282828] shadow-2xl">
+                          <p className="border-b border-black/50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-yt-secondary">
+                            Playback speed
+                          </p>
+                          <div className="max-h-56 overflow-y-auto py-1">
+                            {PLAYBACK_RATES.map((rate) => (
+                              <button
+                                key={rate}
+                                type="button"
+                                onClick={() => changePlaybackRate(rate)}
+                                className={`flex w-full items-center justify-between px-3 py-2 text-sm transition hover:bg-white/10 ${
+                                  playbackRate === rate ? "font-semibold text-yt-red" : "text-white"
+                                }`}
+                              >
+                                <span>{rate === 1 ? "Normal" : `${rate}x`}</span>
+                                {playbackRate === rate ? <Check className="h-4 w-4" /> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-2xl bg-yt-card p-5">
@@ -582,14 +840,6 @@ export default function WatchPage() {
                       <ListPlus className="h-5 w-5" />
                       Save
                     </button>
-                    <button
-                      type="button"
-                      onClick={scrollToComments}
-                      className="inline-flex items-center gap-2 rounded-full bg-yt-hover px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15"
-                    >
-                      <MessageSquare className="h-5 w-5" />
-                      {(comments || []).length > 0 ? formatCount((comments || []).length) : ""}
-                    </button>
                     {session?.user?.id && video?.userId?._id === session.user.id && (
                       <>
                         <button
@@ -670,7 +920,7 @@ export default function WatchPage() {
                 </div>
             </div>
 
-            <aside className="min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+            <aside className="min-w-0">
               <div className="space-y-3">
                 <h2 className="px-1 text-sm font-semibold text-white">Related videos</h2>
                 {relatedLoading ? (

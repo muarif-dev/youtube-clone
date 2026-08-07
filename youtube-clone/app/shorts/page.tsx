@@ -222,7 +222,7 @@ export default function ShortsPage() {
         className="h-[calc(100vh-56px)] min-h-0 flex-1 overflow-y-scroll snap-y snap-mandatory overscroll-contain scroll-smooth scrollbar-none [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="mx-auto flex h-full w-full max-w-4xl flex-col items-center justify-center px-1 py-2">
             <ShortsFeedSkeleton />
           </div>
         ) : shorts.length === 0 ? (
@@ -260,7 +260,7 @@ export default function ShortsPage() {
                   key={short._id}
                   className="flex h-full snap-start items-center justify-center px-1 py-2"
                 >
-                  <div className="flex w-full max-w-3xl items-center gap-4 md:gap-6">
+                  <div className="mx-auto flex w-full max-w-4xl items-center justify-center gap-4 md:gap-6">
                     <div className="relative aspect-[9/16] h-full max-h-full w-full max-w-[300px] shrink-0 overflow-hidden rounded-2xl bg-black sm:max-w-[340px]">
                       <video
                         ref={setVideoRef(short._id)}

@@ -237,7 +237,7 @@ export default function ChannelPage() {
                     <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">
                       {profile?.channelName || profile?.name || "Your Channel"}
                     </h1>
-                    <p className="mt-1 text-sm text-yt-secondary">{profile?.bio || "Creator on YouTube Clone"}</p>
+                    <p className="mt-1 text-sm text-yt-secondary">{profile?.bio || "Creator on Stream Hub"}</p>
                   </div>
                 </div>
                 <div className="flex flex-col gap-3 sm:items-end">
